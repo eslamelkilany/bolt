@@ -54,8 +54,8 @@ const DEFAULT_ADMIN = {
 // Initialize database with tables and default admin
 async function initializeDatabase(db) {
   try {
-    // Create users table
-    await db.exec(`
+    // Create users table using prepare().run() for D1 compatibility
+    await db.prepare(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
@@ -75,10 +75,10 @@ async function initializeDatabase(db) {
         lastLogin TEXT,
         lastActivity TEXT
       )
-    `);
+    `).run();
 
     // Create sessions table
-    await db.exec(`
+    await db.prepare(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         userId TEXT NOT NULL,
@@ -88,13 +88,12 @@ async function initializeDatabase(db) {
         nameAr TEXT,
         loginTime TEXT,
         isAdminLogin INTEGER DEFAULT 0,
-        expiresAt TEXT,
-        FOREIGN KEY (userId) REFERENCES users(id)
+        expiresAt TEXT
       )
-    `);
+    `).run();
 
     // Create activity log table
-    await db.exec(`
+    await db.prepare(`
       CREATE TABLE IF NOT EXISTS activity_log (
         id TEXT PRIMARY KEY,
         userId TEXT,
@@ -102,7 +101,7 @@ async function initializeDatabase(db) {
         details TEXT,
         timestamp TEXT
       )
-    `);
+    `).run();
 
     // Check if admin exists
     const admin = await db.prepare('SELECT id FROM users WHERE email = ?').bind(DEFAULT_ADMIN.email).first();
@@ -129,6 +128,8 @@ async function initializeDatabase(db) {
         DEFAULT_ADMIN.createdAt,
         DEFAULT_ADMIN.createdBy
       ).run();
+      
+      console.log('Default admin created successfully');
     }
 
     return true;
@@ -483,6 +484,94 @@ export async function onRequest(context) {
       // ============ HEALTH CHECK ============
       case path === 'health' && method === 'GET': {
         return jsonResponse({ success: true, status: 'healthy', timestamp: new Date().toISOString() });
+      }
+      
+      // ============ DATABASE INIT (Manual trigger) ============
+      case path === 'init' && method === 'GET': {
+        try {
+          // Create users table
+          await db.prepare(`
+            CREATE TABLE IF NOT EXISTS users (
+              id TEXT PRIMARY KEY,
+              email TEXT UNIQUE NOT NULL,
+              password TEXT NOT NULL,
+              role TEXT DEFAULT 'candidate',
+              name TEXT NOT NULL,
+              nameAr TEXT,
+              department TEXT,
+              position TEXT,
+              tokens INTEGER DEFAULT 1,
+              assignedAssessments TEXT DEFAULT '[]',
+              completedAssessments TEXT DEFAULT '[]',
+              reports TEXT DEFAULT '[]',
+              isActive INTEGER DEFAULT 1,
+              createdAt TEXT,
+              createdBy TEXT,
+              lastLogin TEXT,
+              lastActivity TEXT
+            )
+          `).run();
+
+          // Create sessions table
+          await db.prepare(`
+            CREATE TABLE IF NOT EXISTS sessions (
+              id TEXT PRIMARY KEY,
+              userId TEXT NOT NULL,
+              email TEXT NOT NULL,
+              role TEXT NOT NULL,
+              name TEXT,
+              nameAr TEXT,
+              loginTime TEXT,
+              isAdminLogin INTEGER DEFAULT 0,
+              expiresAt TEXT
+            )
+          `).run();
+
+          // Create activity log table
+          await db.prepare(`
+            CREATE TABLE IF NOT EXISTS activity_log (
+              id TEXT PRIMARY KEY,
+              userId TEXT,
+              action TEXT NOT NULL,
+              details TEXT,
+              timestamp TEXT
+            )
+          `).run();
+
+          // Check if admin exists
+          const admin = await db.prepare('SELECT id FROM users WHERE email = ?').bind(DEFAULT_ADMIN.email).first();
+          
+          if (!admin) {
+            await db.prepare(`
+              INSERT INTO users (id, email, password, role, name, nameAr, department, position, tokens, assignedAssessments, completedAssessments, reports, isActive, createdAt, createdBy)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(
+              DEFAULT_ADMIN.id,
+              DEFAULT_ADMIN.email,
+              DEFAULT_ADMIN.password,
+              DEFAULT_ADMIN.role,
+              DEFAULT_ADMIN.name,
+              DEFAULT_ADMIN.nameAr,
+              DEFAULT_ADMIN.department,
+              DEFAULT_ADMIN.position,
+              DEFAULT_ADMIN.tokens,
+              DEFAULT_ADMIN.assignedAssessments,
+              DEFAULT_ADMIN.completedAssessments,
+              DEFAULT_ADMIN.reports,
+              DEFAULT_ADMIN.isActive,
+              DEFAULT_ADMIN.createdAt,
+              DEFAULT_ADMIN.createdBy
+            ).run();
+          }
+
+          return jsonResponse({ 
+            success: true, 
+            message: 'Database initialized successfully',
+            adminEmail: DEFAULT_ADMIN.email
+          });
+        } catch (initError) {
+          return errorResponse('Database init failed: ' + initError.message, 500);
+        }
       }
       
       default:
