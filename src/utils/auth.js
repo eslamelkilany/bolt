@@ -1,59 +1,15 @@
-// Hybrid Authentication and User Management System for Kafaat Platform
-// Uses Cloudflare Functions API when deployed, falls back to local storage for development
-// Ensures data persistence across browsers when API is available
+// Authentication and User Management System for Kafaat Platform
+// Hybrid approach: Uses Cloudflare Functions API when deployed, localStorage for development
+// This ensures data works locally and persists in cloud when properly deployed
 
 const SESSION_KEY = 'kafaat-session';
-
-// Detect if running on Cloudflare Pages (has /api endpoint)
-let USE_API = false;
-let API_AVAILABLE = null; // null = not checked, true/false = result
-
-// ==================== API HELPER FUNCTIONS ====================
-
-async function checkApiAvailability() {
-  if (API_AVAILABLE !== null) return API_AVAILABLE;
-  
-  try {
-    const response = await fetch('/api/health', { 
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const data = await response.json();
-    API_AVAILABLE = data.success === true;
-    USE_API = API_AVAILABLE;
-    console.log('API available:', API_AVAILABLE);
-  } catch (error) {
-    API_AVAILABLE = false;
-    USE_API = false;
-    console.log('API not available, using local storage');
-  }
-  
-  return API_AVAILABLE;
-}
-
-async function apiCall(endpoint, method = 'GET', data = null) {
-  try {
-    const options = {
-      method,
-      headers: { 'Content-Type': 'application/json' }
-    };
-    
-    if (data) {
-      options.body = JSON.stringify(data);
-    }
-    
-    const response = await fetch(`/api/${endpoint}`, options);
-    return await response.json();
-  } catch (error) {
-    console.error('API Error:', error);
-    return { success: false, error: error.message || 'Network error' };
-  }
-}
-
-// ==================== LOCAL STORAGE HELPERS ====================
-
 const USERS_KEY = 'kafaat-users';
 
+// API endpoint detection
+let USE_API = false;
+let API_CHECKED = false;
+
+// Default Admin Account
 const DEFAULT_ADMIN = {
   id: 'admin-001',
   email: 'eslamelkilany@gmail.com',
@@ -72,21 +28,59 @@ const DEFAULT_ADMIN = {
   createdBy: 'system'
 };
 
+// ==================== API HELPERS ====================
+
+async function checkApiAvailability() {
+  if (API_CHECKED) return USE_API;
+  
+  try {
+    const response = await fetch('/api/health', {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(3000) // 3 second timeout
+    });
+    const data = await response.json();
+    USE_API = data.success === true;
+  } catch {
+    USE_API = false;
+  }
+  
+  API_CHECKED = true;
+  console.log(`Auth mode: ${USE_API ? 'Cloud API' : 'Local Storage'}`);
+  return USE_API;
+}
+
+async function apiCall(endpoint, method = 'GET', data = null) {
+  try {
+    const options = {
+      method,
+      headers: { 'Content-Type': 'application/json' }
+    };
+    if (data) options.body = JSON.stringify(data);
+    
+    const response = await fetch(`/api/${endpoint}`, options);
+    return await response.json();
+  } catch (error) {
+    console.error('API Error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// ==================== LOCAL STORAGE HELPERS ====================
+
 function getLocalUsers() {
   try {
     const data = localStorage.getItem(USERS_KEY);
     let users = data ? JSON.parse(data) : [];
     
-    // Ensure admin exists
-    const adminExists = users.find(u => u.email === DEFAULT_ADMIN.email);
-    if (!adminExists) {
-      users.unshift(DEFAULT_ADMIN);
+    // Ensure admin always exists
+    if (!users.find(u => u.email === DEFAULT_ADMIN.email)) {
+      users.unshift({ ...DEFAULT_ADMIN });
       localStorage.setItem(USERS_KEY, JSON.stringify(users));
     }
-    
     return users;
   } catch {
-    return [DEFAULT_ADMIN];
+    return [{ ...DEFAULT_ADMIN }];
   }
 }
 
@@ -109,50 +103,43 @@ function getStoredSession() {
 }
 
 function storeSession(session) {
-  try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  } catch (error) {
-    console.error('Error storing session:', error);
-  }
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
 
 function clearStoredSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
+function generateId(prefix = 'id') {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
 // ==================== INITIALIZATION ====================
 
 export const initializeAuth = async () => {
   await checkApiAvailability();
-  
-  if (USE_API) {
-    try {
-      const result = await apiCall('health');
-      return result.success;
-    } catch {
-      return false;
-    }
-  }
-  
-  // Initialize local storage
-  getLocalUsers();
+  if (!USE_API) getLocalUsers(); // Ensure admin exists locally
   return true;
 };
 
 // ==================== USER MANAGEMENT ====================
 
 export const getUsers = async () => {
+  await checkApiAvailability();
+  
   if (USE_API) {
     const result = await apiCall('users');
-    return result.success ? result.users : [];
+    return result.success ? result.users : getLocalUsers();
   }
   return getLocalUsers();
 };
 
 export const getUserById = async (userId) => {
+  await checkApiAvailability();
+  
   if (USE_API) {
     const result = await apiCall(`users/${userId}`);
-    return result.success ? result.user : null;
+    if (result.success) return result.user;
   }
   const users = getLocalUsers();
   return users.find(u => u.id === userId) || null;
@@ -164,6 +151,7 @@ export const getUserByEmail = async (email) => {
 };
 
 export const createUser = async (userData) => {
+  await checkApiAvailability();
   const session = getStoredSession();
   
   if (USE_API) {
@@ -173,15 +161,13 @@ export const createUser = async (userData) => {
     });
   }
   
-  // Local storage
   const users = getLocalUsers();
-  const exists = users.find(u => u.email.toLowerCase() === userData.email.toLowerCase());
-  if (exists) {
+  if (users.find(u => u.email.toLowerCase() === userData.email.toLowerCase())) {
     return { success: false, error: 'Email already exists' };
   }
   
   const newUser = {
-    id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: generateId('user'),
     email: userData.email.toLowerCase().trim(),
     password: userData.password,
     role: userData.role || 'candidate',
@@ -200,53 +186,47 @@ export const createUser = async (userData) => {
   
   users.push(newUser);
   saveLocalUsers(users);
-  
   return { success: true, user: newUser };
 };
 
 export const updateUser = async (userId, updates) => {
+  await checkApiAvailability();
+  
   if (USE_API) {
     return await apiCall(`users/${userId}`, 'PUT', updates);
   }
   
   const users = getLocalUsers();
   const index = users.findIndex(u => u.id === userId);
-  
-  if (index === -1) {
-    return { success: false, error: 'User not found' };
-  }
+  if (index === -1) return { success: false, error: 'User not found' };
   
   users[index] = { ...users[index], ...updates, lastActivity: new Date().toISOString() };
   saveLocalUsers(users);
-  
   return { success: true, user: users[index] };
 };
 
 export const deleteUser = async (userId) => {
+  await checkApiAvailability();
+  
   if (USE_API) {
     return await apiCall(`users/${userId}`, 'DELETE');
   }
   
   const users = getLocalUsers();
   const user = users.find(u => u.id === userId);
-  
-  if (!user) {
-    return { success: false, error: 'User not found' };
-  }
-  
-  if (user.email === DEFAULT_ADMIN.email) {
-    return { success: false, error: 'Cannot delete main admin' };
-  }
+  if (!user) return { success: false, error: 'User not found' };
+  if (user.email === DEFAULT_ADMIN.email) return { success: false, error: 'Cannot delete main admin' };
   
   const filtered = users.filter(u => u.id !== userId);
   saveLocalUsers(filtered);
-  
   return { success: true };
 };
 
 // ==================== AUTHENTICATION ====================
 
 export const login = async (email, password, isAdminLogin = false) => {
+  await checkApiAvailability();
+  
   if (USE_API) {
     const result = await apiCall('auth/login', 'POST', {
       email: email.toLowerCase().trim(),
@@ -264,47 +244,33 @@ export const login = async (email, password, isAdminLogin = false) => {
         isAdminLogin
       });
     }
-    
     return result;
   }
   
-  // Local login
+  // Local authentication
   const users = getLocalUsers();
   const user = users.find(u => 
-    u.email.toLowerCase() === email.toLowerCase().trim() && 
-    u.password === password
+    u.email.toLowerCase() === email.toLowerCase().trim() && u.password === password
   );
   
-  if (!user) {
-    return { success: false, error: 'Invalid email or password' };
-  }
-  
-  if (!user.isActive) {
-    return { success: false, error: 'Account is deactivated' };
-  }
-  
-  if (isAdminLogin && user.role !== 'admin') {
-    return { success: false, error: 'Admin credentials required' };
-  }
-  
-  if (!isAdminLogin && user.role === 'admin') {
-    return { success: false, error: 'Please use Admin Login page' };
-  }
+  if (!user) return { success: false, error: 'Invalid email or password' };
+  if (!user.isActive) return { success: false, error: 'Account is deactivated' };
+  if (isAdminLogin && user.role !== 'admin') return { success: false, error: 'Admin credentials required' };
+  if (!isAdminLogin && user.role === 'admin') return { success: false, error: 'Please use Admin Login page' };
   
   // Update last login
-  const index = users.findIndex(u => u.id === user.id);
-  users[index].lastLogin = new Date().toISOString();
+  const idx = users.findIndex(u => u.id === user.id);
+  users[idx].lastLogin = new Date().toISOString();
   saveLocalUsers(users);
   
   const session = {
-    id: `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: generateId('session'),
     userId: user.id,
     email: user.email,
     role: user.role,
     name: user.name,
     isAdminLogin
   };
-  
   storeSession(session);
   
   return { success: true, user, session };
@@ -312,44 +278,34 @@ export const login = async (email, password, isAdminLogin = false) => {
 
 export const logout = async () => {
   const session = getStoredSession();
-  
   if (USE_API && session?.id) {
     await apiCall('auth/logout', 'POST', { sessionId: session.id });
   }
-  
   clearStoredSession();
 };
 
 export const verifySession = async () => {
   const session = getStoredSession();
-  if (!session?.id) {
-    return { valid: false };
-  }
+  if (!session?.id) return { valid: false };
   
   if (USE_API) {
     const result = await apiCall('auth/verify', 'POST', { sessionId: session.id });
-    
     if (!result.success || !result.valid) {
       clearStoredSession();
       return { valid: false };
     }
-    
     return { valid: true, user: result.user, session: result.session };
   }
   
-  // Local verify
   const user = await getUserById(session.userId);
   if (!user) {
     clearStoredSession();
     return { valid: false };
   }
-  
   return { valid: true, user, session };
 };
 
-export const getCurrentSession = () => {
-  return getStoredSession();
-};
+export const getCurrentSession = () => getStoredSession();
 
 export const getCurrentUser = async () => {
   const session = getStoredSession();
@@ -357,13 +313,11 @@ export const getCurrentUser = async () => {
   return await getUserById(session.userId);
 };
 
-export const refreshCurrentUser = async () => {
-  return await getCurrentUser();
-};
+export const refreshCurrentUser = async () => await getCurrentUser();
 
 export const isLoggedIn = () => {
   const session = getStoredSession();
-  return session !== null && session.userId !== undefined;
+  return session?.userId !== undefined;
 };
 
 export const isAdmin = () => {
@@ -382,7 +336,6 @@ export const assignAssessment = async (userId, assessmentType) => {
     currentAssessments.push(assessmentType);
     return await updateUser(userId, { assignedAssessments: currentAssessments });
   }
-  
   return { success: true, user };
 };
 
@@ -398,11 +351,7 @@ export const canAccessAssessment = async (assessmentType) => {
   const user = await getCurrentUser();
   if (!user) return false;
   if (user.role === 'admin') return true;
-  
-  if (!user.assignedAssessments?.includes(assessmentType)) {
-    return false;
-  }
-  
+  if (!user.assignedAssessments?.includes(assessmentType)) return false;
   return await hasAvailableTokens();
 };
 
@@ -420,9 +369,7 @@ export const hasAvailableTokens = async (userId = null) => {
   if (user.role === 'admin') return true;
   
   const usedTokens = (user.completedAssessments || []).length;
-  const totalTokens = user.tokens || 0;
-  
-  return totalTokens > usedTokens;
+  return (user.tokens || 0) > usedTokens;
 };
 
 export const getRemainingTokens = async (userId = null) => {
@@ -431,59 +378,43 @@ export const getRemainingTokens = async (userId = null) => {
   if (user.role === 'admin') return 999;
   
   const usedTokens = (user.completedAssessments || []).length;
-  const totalTokens = user.tokens || 0;
-  
-  return Math.max(0, totalTokens - usedTokens);
+  return Math.max(0, (user.tokens || 0) - usedTokens);
 };
 
 export const getUsedTokens = async (userId = null) => {
   const user = userId ? await getUserById(userId) : await getCurrentUser();
-  if (!user) return 0;
-  return (user.completedAssessments || []).length;
+  return (user?.completedAssessments || []).length;
 };
 
 export const resetUserTokens = async (userId) => {
-  if (USE_API) {
-    return await apiCall(`tokens/reset/${userId}`, 'POST');
-  }
+  if (USE_API) return await apiCall(`tokens/reset/${userId}`, 'POST');
   return await updateUser(userId, { completedAssessments: [] });
 };
 
 export const addTokens = async (userId, amount) => {
   const user = await getUserById(userId);
   if (!user) return { success: false, error: 'User not found' };
-  
-  const newTokens = (user.tokens || 0) + amount;
-  return await updateUser(userId, { tokens: newTokens });
+  return await updateUser(userId, { tokens: (user.tokens || 0) + amount });
 };
 
 // ==================== REPORT MANAGEMENT ====================
 
 export const saveUserReport = async (userId, assessmentType, reportData) => {
   if (USE_API) {
-    return await apiCall('reports', 'POST', {
-      userId,
-      assessmentType,
-      reportData
-    });
+    return await apiCall('reports', 'POST', { userId, assessmentType, reportData });
   }
   
-  // Local storage
   const user = await getUserById(userId);
-  if (!user) {
-    return { success: false, error: 'User not found' };
-  }
+  if (!user) return { success: false, error: 'User not found' };
   
-  // Check tokens for non-admin
+  // Token check for non-admin
   if (user.role !== 'admin') {
     const usedTokens = (user.completedAssessments || []).length;
-    if (usedTokens >= (user.tokens || 0)) {
-      return { success: false, error: 'No tokens available' };
-    }
+    if (usedTokens >= (user.tokens || 0)) return { success: false, error: 'No tokens available' };
   }
   
   const report = {
-    id: `report-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: generateId('report'),
     assessmentType,
     data: reportData,
     completedAt: new Date().toISOString(),
@@ -499,11 +430,7 @@ export const saveUserReport = async (userId, assessmentType, reportData) => {
     ? user.completedAssessments
     : [...(user.completedAssessments || []), assessmentType];
   
-  await updateUser(userId, { 
-    reports: newReports, 
-    completedAssessments: newCompleted 
-  });
-  
+  await updateUser(userId, { reports: newReports, completedAssessments: newCompleted });
   return { success: true, report };
 };
 
@@ -514,8 +441,7 @@ export const getUserReports = async (userId) => {
 
 export const getReport = async (userId, reportId) => {
   const user = await getUserById(userId);
-  if (!user || !user.reports) return null;
-  return user.reports.find(r => r.id === reportId) || null;
+  return user?.reports?.find(r => r.id === reportId) || null;
 };
 
 export const getAllReports = async () => {
@@ -526,7 +452,6 @@ export const getAllReports = async () => {
   
   const users = await getUsers();
   const allReports = [];
-  
   users.forEach(user => {
     (user.reports || []).forEach(report => {
       allReports.push({
@@ -541,16 +466,14 @@ export const getAllReports = async () => {
       });
     });
   });
-  
   return allReports.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
 };
 
-// ==================== STATISTICS ====================
+// ==================== DASHBOARD STATS ====================
 
 export const getDashboardStats = async () => {
   const users = await getUsers();
   const reports = await getAllReports();
-  
   const nonAdminUsers = users.filter(u => u.role !== 'admin');
   
   return {
@@ -567,14 +490,12 @@ export const getDashboardStats = async () => {
 // ==================== ACTIVITY LOG ====================
 
 export const logActivity = async (userId, action, details = {}) => {
-  console.log('Activity:', { userId, action, details });
+  console.log('Activity:', { userId, action, details, timestamp: new Date().toISOString() });
 };
 
-export const getActivityLog = async (limit = 50) => {
-  return [];
-};
+export const getActivityLog = async () => [];
 
-// ==================== EXPORT ====================
+// ==================== EXPORT DEFAULT ====================
 
 export default {
   initializeAuth,
