@@ -528,7 +528,7 @@ const ThankYouPage = () => {
                   <span>{language === 'en' ? 'Kafaat Smart Evaluation Platform' : 'منصة كفاءات للتقييم الذكي'}</span>
                 </div>
                 <p className={`${isKafaat ? 'text-blue-200' : 'text-yellow-100'}`}>
-                  {language === 'en' ? 'Qatar Skills Leadership Curriculum' : 'منهج قطر سكيلز للقيادة'}
+                  {language === 'en' ? 'THOT Knowledge Group' : 'مجموعة ثوت للمعرفة'}
                 </p>
               </div>
             </div>
@@ -623,7 +623,7 @@ const ThankYouPage = () => {
         <div className="mt-10 text-center text-gray-500 text-sm">
           <p>© 2024 {language === 'en' ? 'Kafaat Smart Evaluation Platform' : 'منصة كفاءات للتقييم الذكي'}</p>
           <p className="mt-1">
-            {language === 'en' ? 'Building Tomorrow\'s Leaders Today' : 'نبني قادة الغد اليوم'}
+            {language === 'en' ? 'All rights reserved to THOT Knowledge Group' : 'جميع الحقوق محفوظة لمجموعة ثوت للمعرفة'}
           </p>
         </div>
       </div>

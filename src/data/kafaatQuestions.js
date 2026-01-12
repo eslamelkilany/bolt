@@ -1,5 +1,5 @@
 // AI-powered Kafaat Assessment Questions Bank
-// Based on Qatar Skills Leadership Development Curriculum
+// Based on Kafaat Leadership Development Curriculum
 
 export const competencyAreas = {
   leadershipFundamentals: {

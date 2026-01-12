@@ -24,8 +24,8 @@ const HomePage = () => {
           </p>
           <p className="max-w-2xl mx-auto text-blue-100">
             {language === 'en' 
-              ? 'Comprehensive AI-powered leadership assessment platform designed to evaluate and develop leadership competencies based on Qatar Skills curriculum.'
-              : 'منصة تقييم القيادة الشاملة المدعومة بالذكاء الاصطناعي، مصممة لتقييم وتطوير الكفاءات القيادية بناءً على منهج قطر سكيلز.'
+              ? 'Comprehensive AI-powered leadership assessment platform designed to evaluate and develop leadership competencies based on Kafaat curriculum.'
+              : 'منصة تقييم القيادة الشاملة المدعومة بالذكاء الاصطناعي، مصممة لتقييم وتطوير الكفاءات القيادية بناءً على منهج كفاءات.'
             }
           </p>
         </div>
@@ -130,8 +130,8 @@ const HomePage = () => {
           </h2>
           <p className="text-center text-gray-600 mb-12 max-w-2xl mx-auto">
             {language === 'en' 
-              ? 'Based on Qatar Skills comprehensive leadership development curriculum'
-              : 'بناءً على منهج قطر سكيلز الشامل لتطوير القيادة'
+              ? 'Based on Kafaat comprehensive leadership development curriculum'
+              : 'بناءً على منهج كفاءات الشامل لتطوير القيادة'
             }
           </p>
           
@@ -222,8 +222,8 @@ const HomePage = () => {
           </p>
           <p className="text-sm text-blue-300 mt-2">
             {language === 'en' 
-              ? 'Powered by Qatar Skills Training Curriculum'
-              : 'مدعوم من منهج قطر سكيلز التدريبي'
+              ? 'All rights reserved to THOT Knowledge Group'
+              : 'جميع الحقوق محفوظة لمجموعة ثوت للمعرفة'
             }
           </p>
         </div>

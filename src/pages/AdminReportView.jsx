@@ -819,7 +819,7 @@ const AdminReportView = () => {
               <span className="font-semibold">{language === 'en' ? 'Kafaat Smart Evaluation Platform' : 'منصة كفاءات للتقييم الذكي'}</span>
             </div>
             <p className="opacity-80">
-              {language === 'en' ? 'Powered by Qatar Skills Leadership Development Curriculum' : 'مدعوم من منهج قطر سكيلز لتطوير القيادة'}
+              {language === 'en' ? 'All rights reserved to THOT Knowledge Group' : 'جميع الحقوق محفوظة لمجموعة ثوت للمعرفة'}
             </p>
             <p className="opacity-60 mt-2">
               {language === 'en' ? 'Report Generated:' : 'تاريخ إنشاء التقرير:'} {new Date().toLocaleDateString(language === 'ar' ? 'ar-QA' : 'en-US', {

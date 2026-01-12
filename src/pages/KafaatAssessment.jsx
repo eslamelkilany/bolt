@@ -144,8 +144,8 @@ const KafaatAssessment = () => {
             </h1>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               {language === 'en' 
-                ? 'AI-powered assessment based on Qatar Skills leadership development curriculum'
-                : 'تقييم مدعوم بالذكاء الاصطناعي مبني على منهج قطر سكيلز لتطوير القيادة'
+                ? 'AI-powered assessment based on Kafaat leadership development curriculum'
+                : 'تقييم مدعوم بالذكاء الاصطناعي مبني على منهج كفاءات لتطوير القيادة'
               }
             </p>
           </div>

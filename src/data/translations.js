@@ -14,7 +14,7 @@ export const translations = {
     
     // Assessment Types
     kafaatAssessment: "Kafaat AI Assessment",
-    kafaatDescription: "AI-powered leadership assessment based on Qatar Skills leadership development curriculum",
+    kafaatDescription: "AI-powered leadership assessment based on Kafaat leadership development curriculum",
     leadershipAssessment: "360° Leadership Assessment",
     leadershipDescription: "Comprehensive multi-rater feedback for leadership development",
     
@@ -107,7 +107,7 @@ export const translations = {
     
     // Assessment Types
     kafaatAssessment: "تقييم كفاءات الذكي",
-    kafaatDescription: "تقييم القيادة المدعوم بالذكاء الاصطناعي بناءً على منهج تطوير القيادة من قطر سكيلز",
+    kafaatDescription: "تقييم القيادة المدعوم بالذكاء الاصطناعي بناءً على منهج كفاءات لتطوير القيادة",
     leadershipAssessment: "تقييم القيادة 360°",
     leadershipDescription: "تقييم شامل متعدد المقيّمين لتطوير القيادة",
     

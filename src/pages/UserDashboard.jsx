@@ -74,8 +74,8 @@ const UserDashboard = () => {
       icon: '🤖',
       name: { en: 'Kafaat AI Assessment', ar: 'تقييم كفاءات الذكي' },
       description: { 
-        en: 'AI-powered leadership assessment based on Qatar Skills curriculum',
-        ar: 'تقييم قيادي مدعوم بالذكاء الاصطناعي مبني على منهج قطر سكيلز'
+        en: 'AI-powered leadership assessment based on Kafaat curriculum',
+        ar: 'تقييم قيادي مدعوم بالذكاء الاصطناعي مبني على منهج كفاءات'
       },
       duration: { en: '15-20 minutes', ar: '15-20 دقيقة' },
       questions: 16,
