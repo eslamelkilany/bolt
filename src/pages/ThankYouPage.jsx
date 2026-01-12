@@ -16,18 +16,21 @@ const ThankYouPage = () => {
   const reportRef = useRef(null);
 
   useEffect(() => {
-    const currentUser = auth.getCurrentUser();
-    if (currentUser) {
-      setUser(currentUser);
-      const userReports = currentUser.reports || [];
-      const latestReport = userReports
-        .filter(r => r.assessmentType === type)
-        .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
-      
-      if (latestReport) {
-        setReport(latestReport);
+    const init = async () => {
+      const currentUser = await auth.getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        const userReports = currentUser.reports || [];
+        const latestReport = userReports
+          .filter(r => r.assessmentType === type)
+          .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
+        
+        if (latestReport) {
+          setReport(latestReport);
+        }
       }
-    }
+    };
+    init();
   }, [type]);
 
   // PDF Download Function

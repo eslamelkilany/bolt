@@ -23,58 +23,65 @@ const UserAssessment = () => {
   const [evaluatorRelationship, setEvaluatorRelationship] = useState('colleague');
 
   useEffect(() => {
-    // Check authentication
-    if (!auth.isLoggedIn()) {
-      navigate('/login');
-      return;
-    }
+    const init = async () => {
+      // Check authentication
+      if (!auth.isLoggedIn()) {
+        navigate('/login');
+        return;
+      }
 
-    const currentUser = auth.getCurrentUser();
-    if (!currentUser) {
-      auth.logout();
-      navigate('/login');
-      return;
-    }
+      const currentUser = await auth.getCurrentUser();
+      if (!currentUser) {
+        await auth.logout();
+        navigate('/login');
+        return;
+      }
 
-    // Redirect admin to admin dashboard
-    if (currentUser.role === 'admin') {
-      auth.logout();
-      navigate('/admin-login');
-      return;
-    }
+      // Redirect admin to admin dashboard
+      if (currentUser.role === 'admin') {
+        await auth.logout();
+        navigate('/admin-login');
+        return;
+      }
 
-    // Check if user has access to this assessment
-    if (!auth.canAccessAssessment(type)) {
-      setError(language === 'en' 
-        ? 'You do not have access to this assessment'
-        : 'ليس لديك صلاحية الوصول لهذا التقييم'
-      );
+      // Check if user has access to this assessment
+      const canAccess = await auth.canAccessAssessment(type);
+      if (!canAccess) {
+        setError(language === 'en' 
+          ? 'You do not have access to this assessment'
+          : 'ليس لديك صلاحية الوصول لهذا التقييم'
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Check if user has tokens
+      const hasTokens = await auth.hasAvailableTokens();
+      if (!hasTokens) {
+        setError(language === 'en' 
+          ? 'You have no assessment tokens available. Please contact your administrator.'
+          : 'لا توجد رموز تقييم متاحة. يرجى التواصل مع المسؤول.'
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Check if already completed
+      const completed = await auth.hasCompletedAssessment(type);
+      if (completed) {
+        setError(language === 'en' 
+          ? 'You have already completed this assessment'
+          : 'لقد أكملت هذا التقييم بالفعل'
+        );
+        setLoading(false);
+        return;
+      }
+
+      setUser(currentUser);
       setLoading(false);
-      return;
-    }
-
-    // Check if user has tokens
-    if (!auth.hasAvailableTokens()) {
-      setError(language === 'en' 
-        ? 'You have no assessment tokens available. Please contact your administrator.'
-        : 'لا توجد رموز تقييم متاحة. يرجى التواصل مع المسؤول.'
-      );
-      setLoading(false);
-      return;
-    }
-
-    // Check if already completed
-    if (auth.hasCompletedAssessment(type)) {
-      setError(language === 'en' 
-        ? 'You have already completed this assessment'
-        : 'لقد أكملت هذا التقييم بالفعل'
-      );
-      setLoading(false);
-      return;
-    }
-
-    setUser(currentUser);
-    setLoading(false);
+    };
+    
+    init();
   }, [navigate, type, language]);
 
   const questions = type === 'kafaat' ? kafaatQuestionBank : leadership360Questions;
@@ -149,7 +156,7 @@ const UserAssessment = () => {
     submitAssessment(responses);
   };
 
-  const submitAssessment = (finalResponses) => {
+  const submitAssessment = async (finalResponses) => {
     setStage('submitting');
 
     let reportData;
@@ -240,10 +247,10 @@ const UserAssessment = () => {
     }
 
     // Save report to user profile with complete data integration
-    const saveResult = auth.saveUserReport(user.id, type, reportData);
+    const saveResult = await auth.saveUserReport(user.id, type, reportData);
     
-    if (!saveResult.success) {
-      console.error('Failed to save report:', saveResult.error);
+    if (!saveResult || !saveResult.success) {
+      console.error('Failed to save report:', saveResult?.error);
       alert(language === 'en' 
         ? 'Error saving your assessment. Please contact administrator.'
         : 'خطأ في حفظ التقييم. يرجى التواصل مع المسؤول.'

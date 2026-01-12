@@ -8,37 +8,46 @@ const UserDashboard = () => {
   const navigate = useNavigate();
   const { language, isRTL } = useLanguage();
   const [user, setUser] = useState(null);
+  const [remainingTokens, setRemainingTokens] = useState(0);
 
   // Function to load fresh user data
-  const loadUserData = () => {
-    const currentUser = auth.getCurrentUser();
+  const loadUserData = async () => {
+    const currentUser = await auth.getCurrentUser();
     if (currentUser && currentUser.role !== 'admin') {
       setUser(currentUser);
+      const tokens = await auth.getRemainingTokens();
+      setRemainingTokens(tokens);
     }
   };
 
   useEffect(() => {
-    // Check authentication
-    if (!auth.isLoggedIn()) {
-      navigate('/login');
-      return;
-    }
+    const init = async () => {
+      // Check authentication
+      if (!auth.isLoggedIn()) {
+        navigate('/login');
+        return;
+      }
 
-    const currentUser = auth.getCurrentUser();
-    if (!currentUser) {
-      auth.logout();
-      navigate('/login');
-      return;
-    }
+      const currentUser = await auth.getCurrentUser();
+      if (!currentUser) {
+        await auth.logout();
+        navigate('/login');
+        return;
+      }
 
-    // Redirect admin to admin dashboard via admin-login
-    if (currentUser.role === 'admin') {
-      auth.logout();
-      navigate('/admin-login');
-      return;
-    }
+      // Redirect admin to admin dashboard via admin-login
+      if (currentUser.role === 'admin') {
+        await auth.logout();
+        navigate('/admin-login');
+        return;
+      }
 
-    setUser(currentUser);
+      setUser(currentUser);
+      const tokens = await auth.getRemainingTokens();
+      setRemainingTokens(tokens);
+    };
+    
+    init();
     
     // Auto-refresh user data every 5 seconds to get admin updates
     const refreshInterval = setInterval(() => {
@@ -91,7 +100,6 @@ const UserDashboard = () => {
   );
 
   const completedAssessments = user.completedAssessments || [];
-  const remainingTokens = auth.getRemainingTokens();
   const totalTokens = user.tokens || 0;
   const hasTokens = remainingTokens > 0;
 

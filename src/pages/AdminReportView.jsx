@@ -19,28 +19,32 @@ const AdminReportView = () => {
   const reportRef = useRef(null);
 
   useEffect(() => {
-    if (!auth.isLoggedIn() || !auth.isAdmin()) {
-      navigate('/admin-login');
-      return;
-    }
+    const init = async () => {
+      if (!auth.isLoggedIn() || !auth.isAdmin()) {
+        navigate('/admin-login');
+        return;
+      }
 
-    const userData = auth.getUserById(userId);
-    if (!userData) {
-      navigate('/admin');
-      return;
-    }
+      const userData = await auth.getUserById(userId);
+      if (!userData) {
+        navigate('/admin');
+        return;
+      }
 
-    setUser(userData);
-    setAllReports(userData.reports || []);
+      setUser(userData);
+      setAllReports(userData.reports || []);
 
-    if (reportId) {
-      const specificReport = userData.reports?.find(r => r.id === reportId);
-      setReport(specificReport);
-    } else if (userData.reports?.length > 0) {
-      setReport(userData.reports[0]);
-    }
+      if (reportId) {
+        const specificReport = userData.reports?.find(r => r.id === reportId);
+        setReport(specificReport);
+      } else if (userData.reports?.length > 0) {
+        setReport(userData.reports[0]);
+      }
 
-    setLoading(false);
+      setLoading(false);
+    };
+    
+    init();
   }, [userId, reportId, navigate]);
 
   const downloadPDF = async () => {

@@ -37,13 +37,18 @@ const AdminDashboard = () => {
     return () => clearInterval(refreshInterval);
   }, [navigate]);
 
-  const loadData = () => {
-    // Get fresh data from storage
-    const allUsers = auth.getUsers();
-    // Show all users except the main admin
-    setUsers(allUsers.filter(u => u.email !== 'eslamelkilany@gmail.com'));
-    setReports(auth.getAllReports());
-    setLastRefresh(new Date());
+  const loadData = async () => {
+    try {
+      // Get fresh data from storage - these are async functions
+      const allUsers = await auth.getUsers();
+      // Show all users except the main admin
+      setUsers(allUsers.filter(u => u.email !== 'eslamelkilany@gmail.com'));
+      const allReports = await auth.getAllReports();
+      setReports(allReports);
+      setLastRefresh(new Date());
+    } catch (error) {
+      console.error('Error loading data:', error);
+    }
   };
   
   // Manual refresh function
@@ -51,30 +56,30 @@ const AdminDashboard = () => {
     loadData();
   };
 
-  const handleDeleteUser = (userId) => {
+  const handleDeleteUser = async (userId) => {
     if (window.confirm(language === 'en' 
       ? 'Are you sure you want to delete this user?' 
       : 'هل أنت متأكد من حذف هذا المستخدم؟'
     )) {
-      auth.deleteUser(userId);
+      await auth.deleteUser(userId);
       loadData();
     }
   };
 
-  const handleToggleAssessment = (userId, assessmentType) => {
-    const user = auth.getUserById(userId);
-    if (user.role === 'admin') return; // Admins don't need assessment toggles
+  const handleToggleAssessment = async (userId, assessmentType) => {
+    const user = await auth.getUserById(userId);
+    if (user?.role === 'admin') return; // Admins don't need assessment toggles
     
-    if (user.assignedAssessments?.includes(assessmentType)) {
-      auth.removeAssessment(userId, assessmentType);
+    if (user?.assignedAssessments?.includes(assessmentType)) {
+      await auth.removeAssessment(userId, assessmentType);
     } else {
-      auth.assignAssessment(userId, assessmentType);
+      await auth.assignAssessment(userId, assessmentType);
     }
     loadData();
   };
 
-  const handleResetTokens = (userId) => {
-    auth.resetUserTokens(userId);
+  const handleResetTokens = async (userId) => {
+    await auth.resetUserTokens(userId);
     loadData();
     alert(language === 'en' ? 'Tokens reset successfully!' : 'تم إعادة تعيين الرموز بنجاح!');
   };
@@ -456,7 +461,7 @@ const CreateUserModal = ({ onClose, language }) => {
   });
   const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -478,41 +483,42 @@ const CreateUserModal = ({ onClose, language }) => {
       }
     }
 
-    const result = auth.createUser(formData);
-    
-    if (result.success) {
-      const roleText = formData.role === 'candidate' 
-        ? (language === 'en' ? 'Candidate' : 'مرشح')
-        : (language === 'en' ? 'Administrator' : 'مسؤول');
+    try {
+      const result = await auth.createUser(formData);
       
-      const tokenInfo = formData.role === 'candidate' 
-        ? `\n${language === 'en' ? 'Tokens' : 'الرموز'}: ${formData.tokens}`
-        : '';
-      
-      const loginUrl = formData.role === 'admin'
-        ? `\n${language === 'en' ? 'Login URL' : 'رابط الدخول'}: /admin-login`
-        : `\n${language === 'en' ? 'Login URL' : 'رابط الدخول'}: /login`;
-      
-      // Log the created user for debugging
-      console.log('User created successfully:', {
-        id: result.user.id,
-        email: result.user.email,
-        role: result.user.role,
-        isActive: result.user.isActive
-      });
-      
-      // Verify user was saved
-      const savedUsers = auth.getUsers();
-      console.log('All users after creation:', savedUsers.map(u => ({ email: u.email, role: u.role })));
-      
-      alert(language === 'en' 
-        ? `✅ User created successfully!\n\n👤 Role: ${roleText}\n📧 Email: ${formData.email}\n🔑 Password: ${formData.password}${tokenInfo}${loginUrl}\n\n⚠️ Important: Share these credentials with the user.\nThe user can now login at the /login page.`
-        : `✅ تم إنشاء المستخدم بنجاح!\n\n👤 الدور: ${roleText}\n📧 البريد: ${formData.email}\n🔑 كلمة المرور: ${formData.password}${tokenInfo}${loginUrl}\n\n⚠️ مهم: شارك هذه البيانات مع المستخدم.\nيمكن للمستخدم الآن تسجيل الدخول من صفحة /login.`
-      );
-      onClose();
-    } else {
-      console.error('Failed to create user:', result.error);
-      setError(result.error);
+      if (result.success) {
+        const roleText = formData.role === 'candidate' 
+          ? (language === 'en' ? 'Candidate' : 'مرشح')
+          : (language === 'en' ? 'Administrator' : 'مسؤول');
+        
+        const tokenInfo = formData.role === 'candidate' 
+          ? `\n${language === 'en' ? 'Tokens' : 'الرموز'}: ${formData.tokens}`
+          : '';
+        
+        const loginUrl = formData.role === 'admin'
+          ? `\n${language === 'en' ? 'Login URL' : 'رابط الدخول'}: /admin-login`
+          : `\n${language === 'en' ? 'Login URL' : 'رابط الدخول'}: /login`;
+        
+        // Log the created user for debugging
+        console.log('User created successfully:', {
+          id: result.user.id,
+          email: result.user.email,
+          role: result.user.role,
+          isActive: result.user.isActive
+        });
+        
+        alert(language === 'en' 
+          ? `✅ User created successfully!\n\n👤 Role: ${roleText}\n📧 Email: ${formData.email}\n🔑 Password: ${formData.password}${tokenInfo}${loginUrl}\n\n⚠️ Important: Share these credentials with the user.\nThe user can now login at the /login page.`
+          : `✅ تم إنشاء المستخدم بنجاح!\n\n👤 الدور: ${roleText}\n📧 البريد: ${formData.email}\n🔑 كلمة المرور: ${formData.password}${tokenInfo}${loginUrl}\n\n⚠️ مهم: شارك هذه البيانات مع المستخدم.\nيمكن للمستخدم الآن تسجيل الدخول من صفحة /login.`
+        );
+        onClose();
+      } else {
+        console.error('Failed to create user:', result.error);
+        setError(result.error);
+      }
+    } catch (error) {
+      console.error('Error creating user:', error);
+      setError('Failed to create user');
     }
   };
 
@@ -803,9 +809,9 @@ const EditUserModal = ({ user, onClose, language }) => {
     isActive: user.isActive !== false
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    auth.updateUser(user.id, formData);
+    await auth.updateUser(user.id, formData);
     alert(language === 'en' ? 'User updated successfully!' : 'تم تحديث المستخدم بنجاح!');
     onClose();
   };
