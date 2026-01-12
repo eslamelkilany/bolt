@@ -33,15 +33,29 @@ const DEFAULT_ADMIN = {
 async function checkApiAvailability() {
   if (API_CHECKED) return USE_API;
   
+  // Always initialize local storage first (ensures admin exists)
+  getLocalUsers();
+  
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
     const response = await fetch('/api/health', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(3000) // 3 second timeout
+      signal: controller.signal
     });
-    const data = await response.json();
-    USE_API = data.success === true;
-  } catch {
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const data = await response.json();
+      USE_API = data.success === true;
+    } else {
+      USE_API = false;
+    }
+  } catch (error) {
+    console.log('API not available, using localStorage:', error.message);
     USE_API = false;
   }
   
@@ -74,12 +88,15 @@ function getLocalUsers() {
     let users = data ? JSON.parse(data) : [];
     
     // Ensure admin always exists
-    if (!users.find(u => u.email === DEFAULT_ADMIN.email)) {
+    const adminExists = users.find(u => u.email.toLowerCase() === DEFAULT_ADMIN.email.toLowerCase());
+    if (!adminExists) {
       users.unshift({ ...DEFAULT_ADMIN });
       localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      console.log('Admin user initialized in localStorage');
     }
     return users;
-  } catch {
+  } catch (error) {
+    console.error('Error loading users from localStorage:', error);
     return [{ ...DEFAULT_ADMIN }];
   }
 }
