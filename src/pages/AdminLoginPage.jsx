@@ -190,8 +190,8 @@ const AdminLoginPage = () => {
             <p>© 2024 Kafaat Smart Evaluation Platform</p>
             <p className="mt-1">
               {language === 'en' 
-                ? 'All rights reserved to THOT Knowledge Group'
-                : 'جميع الحقوق محفوظة لمجموعة ثوت للمعرفة'
+                ? 'Powered by THOT Knowledge'
+                : 'مدعوم من ثوت للمعرفة'
               }
             </p>
           </div>

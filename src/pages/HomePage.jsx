@@ -222,8 +222,8 @@ const HomePage = () => {
           </p>
           <p className="text-sm text-blue-300 mt-2">
             {language === 'en' 
-              ? 'All rights reserved to THOT Knowledge Group'
-              : 'جميع الحقوق محفوظة لمجموعة ثوت للمعرفة'
+              ? 'Powered by THOT Knowledge'
+              : 'مدعوم من ثوت للمعرفة'
             }
           </p>
         </div>
