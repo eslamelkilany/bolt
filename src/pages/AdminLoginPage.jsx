@@ -14,12 +14,15 @@ const AdminLoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    auth.initializeAuth();
-    
-    // If already logged in as admin, redirect to admin dashboard
-    if (auth.isLoggedIn() && auth.isAdmin()) {
-      navigate('/admin');
-    }
+    const init = async () => {
+      await auth.initializeAuth();
+      
+      // If already logged in as admin, redirect to admin dashboard
+      if (auth.isLoggedIn() && auth.isAdmin()) {
+        navigate('/admin');
+      }
+    };
+    init();
   }, [navigate]);
 
   const handleLogin = async (e) => {
@@ -28,13 +31,13 @@ const AdminLoginPage = () => {
     setLoading(true);
 
     try {
-      // Admin login with isAdminLogin = true
-      const result = auth.login(email, password, true);
+      // Admin login with isAdminLogin = true - MUST await async function
+      const result = await auth.login(email, password, true);
       
       if (result.success) {
         navigate('/admin');
       } else {
-        let errorMessage = result.error;
+        let errorMessage = result.error || 'Login failed';
         if (language === 'ar') {
           if (result.error === 'Invalid email or password') {
             errorMessage = 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
@@ -47,7 +50,8 @@ const AdminLoginPage = () => {
         setError(errorMessage);
       }
     } catch (err) {
-      setError(language === 'en' ? 'An error occurred' : 'حدث خطأ');
+      console.error('Login error:', err);
+      setError(language === 'en' ? 'An error occurred. Please try again.' : 'حدث خطأ. يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
