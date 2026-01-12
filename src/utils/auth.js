@@ -1,36 +1,104 @@
-// Cloud-Based Authentication and User Management System for Kafaat Platform
-// Uses Cloudflare D1 Database via API for persistent cloud storage
-// Works across all browsers and sessions
+// Hybrid Authentication and User Management System for Kafaat Platform
+// Uses Cloudflare Functions API when deployed, falls back to local storage for development
+// Ensures data persistence across browsers when API is available
 
-const API_BASE = '/api';
 const SESSION_KEY = 'kafaat-session';
 
+// Detect if running on Cloudflare Pages (has /api endpoint)
+let USE_API = false;
+let API_AVAILABLE = null; // null = not checked, true/false = result
+
 // ==================== API HELPER FUNCTIONS ====================
+
+async function checkApiAvailability() {
+  if (API_AVAILABLE !== null) return API_AVAILABLE;
+  
+  try {
+    const response = await fetch('/api/health', { 
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await response.json();
+    API_AVAILABLE = data.success === true;
+    USE_API = API_AVAILABLE;
+    console.log('API available:', API_AVAILABLE);
+  } catch (error) {
+    API_AVAILABLE = false;
+    USE_API = false;
+    console.log('API not available, using local storage');
+  }
+  
+  return API_AVAILABLE;
+}
 
 async function apiCall(endpoint, method = 'GET', data = null) {
   try {
     const options = {
       method,
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers: { 'Content-Type': 'application/json' }
     };
     
     if (data) {
       options.body = JSON.stringify(data);
     }
     
-    const response = await fetch(`${API_BASE}/${endpoint}`, options);
-    const result = await response.json();
-    
-    return result;
+    const response = await fetch(`/api/${endpoint}`, options);
+    return await response.json();
   } catch (error) {
     console.error('API Error:', error);
     return { success: false, error: error.message || 'Network error' };
   }
 }
 
-// Get current session from localStorage (session ID only)
+// ==================== LOCAL STORAGE HELPERS ====================
+
+const USERS_KEY = 'kafaat-users';
+
+const DEFAULT_ADMIN = {
+  id: 'admin-001',
+  email: 'eslamelkilany@gmail.com',
+  password: '2951990@Eami',
+  role: 'admin',
+  name: 'System Administrator',
+  nameAr: 'مسؤول النظام',
+  department: 'Administration',
+  position: 'System Admin',
+  tokens: 0,
+  assignedAssessments: ['kafaat', '360'],
+  completedAssessments: [],
+  reports: [],
+  isActive: true,
+  createdAt: '2024-01-01T00:00:00.000Z',
+  createdBy: 'system'
+};
+
+function getLocalUsers() {
+  try {
+    const data = localStorage.getItem(USERS_KEY);
+    let users = data ? JSON.parse(data) : [];
+    
+    // Ensure admin exists
+    const adminExists = users.find(u => u.email === DEFAULT_ADMIN.email);
+    if (!adminExists) {
+      users.unshift(DEFAULT_ADMIN);
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    }
+    
+    return users;
+  } catch {
+    return [DEFAULT_ADMIN];
+  }
+}
+
+function saveLocalUsers(users) {
+  try {
+    localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getStoredSession() {
   try {
     const data = localStorage.getItem(SESSION_KEY);
@@ -40,7 +108,6 @@ function getStoredSession() {
   }
 }
 
-// Store session in localStorage
 function storeSession(session) {
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -49,141 +116,256 @@ function storeSession(session) {
   }
 }
 
-// Clear session from localStorage
 function clearStoredSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
 // ==================== INITIALIZATION ====================
 
-// Initialize auth system (checks API health)
 export const initializeAuth = async () => {
-  try {
-    const result = await apiCall('health');
-    return result.success;
-  } catch {
-    return false;
+  await checkApiAvailability();
+  
+  if (USE_API) {
+    try {
+      const result = await apiCall('health');
+      return result.success;
+    } catch {
+      return false;
+    }
   }
+  
+  // Initialize local storage
+  getLocalUsers();
+  return true;
 };
 
 // ==================== USER MANAGEMENT ====================
 
-// Get all users from cloud database
 export const getUsers = async () => {
-  const result = await apiCall('users');
-  return result.success ? result.users : [];
+  if (USE_API) {
+    const result = await apiCall('users');
+    return result.success ? result.users : [];
+  }
+  return getLocalUsers();
 };
 
-// Get user by ID
 export const getUserById = async (userId) => {
-  const result = await apiCall(`users/${userId}`);
-  return result.success ? result.user : null;
+  if (USE_API) {
+    const result = await apiCall(`users/${userId}`);
+    return result.success ? result.user : null;
+  }
+  const users = getLocalUsers();
+  return users.find(u => u.id === userId) || null;
 };
 
-// Get user by email
 export const getUserByEmail = async (email) => {
   const users = await getUsers();
   return users.find(u => u.email.toLowerCase() === email.toLowerCase()) || null;
 };
 
-// Create new user
 export const createUser = async (userData) => {
   const session = getStoredSession();
-  const result = await apiCall('users', 'POST', {
-    ...userData,
+  
+  if (USE_API) {
+    return await apiCall('users', 'POST', {
+      ...userData,
+      createdBy: session?.userId || 'system'
+    });
+  }
+  
+  // Local storage
+  const users = getLocalUsers();
+  const exists = users.find(u => u.email.toLowerCase() === userData.email.toLowerCase());
+  if (exists) {
+    return { success: false, error: 'Email already exists' };
+  }
+  
+  const newUser = {
+    id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    email: userData.email.toLowerCase().trim(),
+    password: userData.password,
+    role: userData.role || 'candidate',
+    name: userData.name.trim(),
+    nameAr: (userData.nameAr || userData.name).trim(),
+    department: (userData.department || '').trim(),
+    position: (userData.position || '').trim(),
+    tokens: userData.role === 'admin' ? 0 : (parseInt(userData.tokens) || 1),
+    assignedAssessments: userData.assignedAssessments || [],
+    completedAssessments: [],
+    reports: [],
+    isActive: true,
+    createdAt: new Date().toISOString(),
     createdBy: session?.userId || 'system'
-  });
-  return result;
+  };
+  
+  users.push(newUser);
+  saveLocalUsers(users);
+  
+  return { success: true, user: newUser };
 };
 
-// Update user
 export const updateUser = async (userId, updates) => {
-  const result = await apiCall(`users/${userId}`, 'PUT', updates);
-  return result;
+  if (USE_API) {
+    return await apiCall(`users/${userId}`, 'PUT', updates);
+  }
+  
+  const users = getLocalUsers();
+  const index = users.findIndex(u => u.id === userId);
+  
+  if (index === -1) {
+    return { success: false, error: 'User not found' };
+  }
+  
+  users[index] = { ...users[index], ...updates, lastActivity: new Date().toISOString() };
+  saveLocalUsers(users);
+  
+  return { success: true, user: users[index] };
 };
 
-// Delete user
 export const deleteUser = async (userId) => {
-  const result = await apiCall(`users/${userId}`, 'DELETE');
-  return result;
+  if (USE_API) {
+    return await apiCall(`users/${userId}`, 'DELETE');
+  }
+  
+  const users = getLocalUsers();
+  const user = users.find(u => u.id === userId);
+  
+  if (!user) {
+    return { success: false, error: 'User not found' };
+  }
+  
+  if (user.email === DEFAULT_ADMIN.email) {
+    return { success: false, error: 'Cannot delete main admin' };
+  }
+  
+  const filtered = users.filter(u => u.id !== userId);
+  saveLocalUsers(filtered);
+  
+  return { success: true };
 };
 
 // ==================== AUTHENTICATION ====================
 
-// Login user
 export const login = async (email, password, isAdminLogin = false) => {
-  const result = await apiCall('auth/login', 'POST', {
-    email: email.toLowerCase().trim(),
-    password,
-    isAdminLogin
-  });
-  
-  if (result.success) {
-    storeSession({
-      id: result.session.id,
-      userId: result.session.userId,
-      email: result.session.email,
-      role: result.session.role,
-      name: result.session.name,
+  if (USE_API) {
+    const result = await apiCall('auth/login', 'POST', {
+      email: email.toLowerCase().trim(),
+      password,
       isAdminLogin
     });
+    
+    if (result.success) {
+      storeSession({
+        id: result.session.id,
+        userId: result.session.userId,
+        email: result.session.email,
+        role: result.session.role,
+        name: result.session.name,
+        isAdminLogin
+      });
+    }
+    
+    return result;
   }
   
-  return result;
+  // Local login
+  const users = getLocalUsers();
+  const user = users.find(u => 
+    u.email.toLowerCase() === email.toLowerCase().trim() && 
+    u.password === password
+  );
+  
+  if (!user) {
+    return { success: false, error: 'Invalid email or password' };
+  }
+  
+  if (!user.isActive) {
+    return { success: false, error: 'Account is deactivated' };
+  }
+  
+  if (isAdminLogin && user.role !== 'admin') {
+    return { success: false, error: 'Admin credentials required' };
+  }
+  
+  if (!isAdminLogin && user.role === 'admin') {
+    return { success: false, error: 'Please use Admin Login page' };
+  }
+  
+  // Update last login
+  const index = users.findIndex(u => u.id === user.id);
+  users[index].lastLogin = new Date().toISOString();
+  saveLocalUsers(users);
+  
+  const session = {
+    id: `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    name: user.name,
+    isAdminLogin
+  };
+  
+  storeSession(session);
+  
+  return { success: true, user, session };
 };
 
-// Logout user
 export const logout = async () => {
   const session = getStoredSession();
-  if (session?.id) {
+  
+  if (USE_API && session?.id) {
     await apiCall('auth/logout', 'POST', { sessionId: session.id });
   }
+  
   clearStoredSession();
 };
 
-// Verify current session
 export const verifySession = async () => {
   const session = getStoredSession();
   if (!session?.id) {
     return { valid: false };
   }
   
-  const result = await apiCall('auth/verify', 'POST', { sessionId: session.id });
+  if (USE_API) {
+    const result = await apiCall('auth/verify', 'POST', { sessionId: session.id });
+    
+    if (!result.success || !result.valid) {
+      clearStoredSession();
+      return { valid: false };
+    }
+    
+    return { valid: true, user: result.user, session: result.session };
+  }
   
-  if (!result.success || !result.valid) {
+  // Local verify
+  const user = await getUserById(session.userId);
+  if (!user) {
     clearStoredSession();
     return { valid: false };
   }
   
-  return { valid: true, user: result.user, session: result.session };
+  return { valid: true, user, session };
 };
 
-// Get current session (synchronous - from localStorage)
 export const getCurrentSession = () => {
   return getStoredSession();
 };
 
-// Get current user (async - from cloud)
 export const getCurrentUser = async () => {
   const session = getStoredSession();
   if (!session?.userId) return null;
-  
-  const result = await apiCall(`users/${session.userId}`);
-  return result.success ? result.user : null;
+  return await getUserById(session.userId);
 };
 
-// Refresh current user data
 export const refreshCurrentUser = async () => {
   return await getCurrentUser();
 };
 
-// Check if user is logged in (synchronous check, verify with verifySession for certainty)
 export const isLoggedIn = () => {
   const session = getStoredSession();
   return session !== null && session.userId !== undefined;
 };
 
-// Check if current user is admin
 export const isAdmin = () => {
   const session = getStoredSession();
   return session?.role === 'admin';
@@ -191,7 +373,6 @@ export const isAdmin = () => {
 
 // ==================== ASSESSMENT MANAGEMENT ====================
 
-// Assign assessment to user
 export const assignAssessment = async (userId, assessmentType) => {
   const user = await getUserById(userId);
   if (!user) return { success: false, error: 'User not found' };
@@ -205,7 +386,6 @@ export const assignAssessment = async (userId, assessmentType) => {
   return { success: true, user };
 };
 
-// Remove assessment from user
 export const removeAssessment = async (userId, assessmentType) => {
   const user = await getUserById(userId);
   if (!user) return { success: false, error: 'User not found' };
@@ -214,7 +394,6 @@ export const removeAssessment = async (userId, assessmentType) => {
   return await updateUser(userId, { assignedAssessments: currentAssessments });
 };
 
-// Check if user can access assessment
 export const canAccessAssessment = async (assessmentType) => {
   const user = await getCurrentUser();
   if (!user) return false;
@@ -227,7 +406,6 @@ export const canAccessAssessment = async (assessmentType) => {
   return await hasAvailableTokens();
 };
 
-// Check if user has completed assessment
 export const hasCompletedAssessment = async (assessmentType) => {
   const user = await getCurrentUser();
   if (!user) return false;
@@ -236,7 +414,6 @@ export const hasCompletedAssessment = async (assessmentType) => {
 
 // ==================== TOKEN MANAGEMENT ====================
 
-// Check if user has available tokens
 export const hasAvailableTokens = async (userId = null) => {
   const user = userId ? await getUserById(userId) : await getCurrentUser();
   if (!user) return false;
@@ -248,7 +425,6 @@ export const hasAvailableTokens = async (userId = null) => {
   return totalTokens > usedTokens;
 };
 
-// Get remaining tokens
 export const getRemainingTokens = async (userId = null) => {
   const user = userId ? await getUserById(userId) : await getCurrentUser();
   if (!user) return 0;
@@ -260,20 +436,19 @@ export const getRemainingTokens = async (userId = null) => {
   return Math.max(0, totalTokens - usedTokens);
 };
 
-// Get used tokens
 export const getUsedTokens = async (userId = null) => {
   const user = userId ? await getUserById(userId) : await getCurrentUser();
   if (!user) return 0;
   return (user.completedAssessments || []).length;
 };
 
-// Reset user tokens
 export const resetUserTokens = async (userId) => {
-  const result = await apiCall(`tokens/reset/${userId}`, 'POST');
-  return result;
+  if (USE_API) {
+    return await apiCall(`tokens/reset/${userId}`, 'POST');
+  }
+  return await updateUser(userId, { completedAssessments: [] });
 };
 
-// Add tokens to user
 export const addTokens = async (userId, amount) => {
   const user = await getUserById(userId);
   if (!user) return { success: false, error: 'User not found' };
@@ -284,38 +459,94 @@ export const addTokens = async (userId, amount) => {
 
 // ==================== REPORT MANAGEMENT ====================
 
-// Save assessment report
 export const saveUserReport = async (userId, assessmentType, reportData) => {
-  const result = await apiCall('reports', 'POST', {
-    userId,
+  if (USE_API) {
+    return await apiCall('reports', 'POST', {
+      userId,
+      assessmentType,
+      reportData
+    });
+  }
+  
+  // Local storage
+  const user = await getUserById(userId);
+  if (!user) {
+    return { success: false, error: 'User not found' };
+  }
+  
+  // Check tokens for non-admin
+  if (user.role !== 'admin') {
+    const usedTokens = (user.completedAssessments || []).length;
+    if (usedTokens >= (user.tokens || 0)) {
+      return { success: false, error: 'No tokens available' };
+    }
+  }
+  
+  const report = {
+    id: `report-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     assessmentType,
-    reportData
+    data: reportData,
+    completedAt: new Date().toISOString(),
+    userId,
+    userName: user.name,
+    userEmail: user.email,
+    userDepartment: user.department,
+    userPosition: user.position
+  };
+  
+  const newReports = [...(user.reports || []), report];
+  const newCompleted = (user.completedAssessments || []).includes(assessmentType)
+    ? user.completedAssessments
+    : [...(user.completedAssessments || []), assessmentType];
+  
+  await updateUser(userId, { 
+    reports: newReports, 
+    completedAssessments: newCompleted 
   });
-  return result;
+  
+  return { success: true, report };
 };
 
-// Get user reports
 export const getUserReports = async (userId) => {
   const user = await getUserById(userId);
   return user?.reports || [];
 };
 
-// Get specific report
 export const getReport = async (userId, reportId) => {
   const user = await getUserById(userId);
   if (!user || !user.reports) return null;
   return user.reports.find(r => r.id === reportId) || null;
 };
 
-// Get all reports (Admin only)
 export const getAllReports = async () => {
-  const result = await apiCall('reports');
-  return result.success ? result.reports : [];
+  if (USE_API) {
+    const result = await apiCall('reports');
+    return result.success ? result.reports : [];
+  }
+  
+  const users = await getUsers();
+  const allReports = [];
+  
+  users.forEach(user => {
+    (user.reports || []).forEach(report => {
+      allReports.push({
+        ...report,
+        userId: user.id,
+        userName: user.name,
+        userNameAr: user.nameAr,
+        userEmail: user.email,
+        userDepartment: user.department,
+        userPosition: user.position,
+        userRole: user.role
+      });
+    });
+  });
+  
+  return allReports.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
 };
 
 // ==================== STATISTICS ====================
 
-// Get dashboard statistics
 export const getDashboardStats = async () => {
   const users = await getUsers();
   const reports = await getAllReports();
@@ -335,33 +566,24 @@ export const getDashboardStats = async () => {
 
 // ==================== ACTIVITY LOG ====================
 
-// Log activity (handled by API automatically)
 export const logActivity = async (userId, action, details = {}) => {
-  // Activity logging is handled automatically by the API
   console.log('Activity:', { userId, action, details });
 };
 
-// Get activity log
 export const getActivityLog = async (limit = 50) => {
-  // Activity log retrieval - would need to add API endpoint
   return [];
 };
 
 // ==================== EXPORT ====================
 
 export default {
-  // Initialization
   initializeAuth,
-  
-  // User Management
   getUsers,
   getUserById,
   getUserByEmail,
   createUser,
   updateUser,
   deleteUser,
-  
-  // Authentication
   login,
   logout,
   verifySession,
@@ -370,30 +592,20 @@ export default {
   refreshCurrentUser,
   isLoggedIn,
   isAdmin,
-  
-  // Assessment Management
   assignAssessment,
   removeAssessment,
   canAccessAssessment,
   hasCompletedAssessment,
-  
-  // Token Management
   hasAvailableTokens,
   getRemainingTokens,
   getUsedTokens,
   resetUserTokens,
   addTokens,
-  
-  // Report Management
   saveUserReport,
   getUserReports,
   getReport,
   getAllReports,
-  
-  // Statistics
   getDashboardStats,
-  
-  // Activity
   logActivity,
   getActivityLog
 };

@@ -1,12 +1,15 @@
 # Cloudflare Pages configuration
 name = "kafaat-platform"
 compatibility_date = "2024-01-01"
-
-# Specify Pages project settings
 pages_build_output_dir = "dist"
 
-# D1 Database binding
-[[d1_databases]]
-binding = "DB"
-database_name = "kafaat-db"
-database_id = "placeholder-will-be-set-during-deployment"
+# Note: D1 Database binding will be configured in Cloudflare Dashboard
+# After deploying, create a D1 database and bind it with:
+# - Binding name: DB
+# - Database: kafaat-db
+#
+# D1 database can be created via Cloudflare Dashboard:
+# 1. Go to Workers & Pages > D1
+# 2. Create database named "kafaat-db"
+# 3. Go to your Pages project > Settings > Functions > D1 database bindings
+# 4. Add binding: Variable name "DB", Database "kafaat-db"
