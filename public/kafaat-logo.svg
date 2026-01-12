@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#D4AF37"/>
+      <stop offset="100%" style="stop-color:#F4D957"/>
+    </linearGradient>
+    <linearGradient id="navyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1B365D"/>
+      <stop offset="100%" style="stop-color:#2d4a7c"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Circle background -->
+  <circle cx="50" cy="50" r="48" fill="url(#goldGradient)"/>
+  <circle cx="50" cy="50" r="42" fill="url(#navyGradient)"/>
+  
+  <!-- K letter -->
+  <text x="50" y="65" font-family="Arial, sans-serif" font-size="45" font-weight="bold" fill="#D4AF37" text-anchor="middle">K</text>
+  
+  <!-- Decorative elements -->
+  <circle cx="50" cy="50" r="46" fill="none" stroke="#D4AF37" stroke-width="1" opacity="0.5"/>
+</svg>

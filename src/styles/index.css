@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Styles */
+:root {
+  --kafaat-gold: #D4AF37;
+  --kafaat-navy: #1B365D;
+  --kafaat-maroon: #722F37;
+  --kafaat-teal: #008080;
+}
+
+body {
+  font-family: 'Inter', 'Cairo', system-ui, sans-serif;
+}
+
+[dir="rtl"] body,
+.rtl {
+  font-family: 'Cairo', 'Tajawal', 'Inter', system-ui, sans-serif;
+  direction: rtl;
+}
+
+/* Gradient backgrounds */
+.bg-gradient-kafaat {
+  background: linear-gradient(135deg, #1B365D 0%, #2d4a7c 50%, #3d5a8c 100%);
+}
+
+.bg-gradient-gold {
+  background: linear-gradient(135deg, #D4AF37 0%, #E8C547 50%, #F4D957 100%);
+}
+
+/* Card hover effects */
+.card-hover {
+  @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+}
+
+/* Progress bar animation */
+.progress-bar {
+  @apply transition-all duration-500 ease-out;
+}
+
+/* Rating scale buttons */
+.rating-btn {
+  @apply px-4 py-3 rounded-lg border-2 transition-all duration-200 cursor-pointer;
+}
+
+.rating-btn:hover {
+  @apply border-primary-500 bg-primary-50;
+}
+
+.rating-btn.selected {
+  @apply border-primary-600 bg-primary-600 text-white;
+}
+
+/* RTL specific styles */
+[dir="rtl"] .flip-rtl {
+  transform: scaleX(-1);
+}
+
+/* Chart container */
+.chart-container {
+  @apply w-full aspect-square max-w-md mx-auto;
+}
+
+/* Print styles for reports */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-break {
+    page-break-before: always;
+  }
+  
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+/* Animation classes */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-slideIn {
+  animation: slideIn 0.4s ease-out forwards;
+}
+
+/* Competency badge colors */
+.badge-leadership { @apply bg-blue-100 text-blue-800 border-blue-300; }
+.badge-change { @apply bg-purple-100 text-purple-800 border-purple-300; }
+.badge-performance { @apply bg-green-100 text-green-800 border-green-300; }
+.badge-team { @apply bg-orange-100 text-orange-800 border-orange-300; }
+.badge-communication { @apply bg-teal-100 text-teal-800 border-teal-300; }
+.badge-problem { @apply bg-red-100 text-red-800 border-red-300; }
+.badge-emotional { @apply bg-pink-100 text-pink-800 border-pink-300; }
+.badge-strategic { @apply bg-indigo-100 text-indigo-800 border-indigo-300; }
+
+/* Score colors */
+.score-excellent { @apply text-green-600 bg-green-50; }
+.score-good { @apply text-blue-600 bg-blue-50; }
+.score-average { @apply text-yellow-600 bg-yellow-50; }
+.score-needs-improvement { @apply text-red-600 bg-red-50; }
+
+/* Loading spinner */
+.spinner {
+  @apply inline-block w-6 h-6 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded hover:bg-gray-400;
+}

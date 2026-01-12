@@ -1,0 +1,12 @@
+# Cloudflare Pages configuration
+name = "kafaat-platform"
+compatibility_date = "2024-01-01"
+
+# Specify Pages project settings
+pages_build_output_dir = "dist"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "kafaat-db"
+database_id = "placeholder-will-be-set-during-deployment"
