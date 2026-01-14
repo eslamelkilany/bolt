@@ -5,6 +5,7 @@ import * as auth from '../utils/auth';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { kafaatCompetencyData, leadership360Data, getPerformanceTier } from '../data/reportRecommendations';
+import { generatePersonalizedAnalysis, generateExecutiveSummary } from '../utils/aiAnalysis';
 
 const ThankYouPage = () => {
   const navigate = useNavigate();
@@ -12,8 +13,29 @@ const ThankYouPage = () => {
   const { language, isRTL } = useLanguage();
   const [user, setUser] = useState(null);
   const [report, setReport] = useState(null);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const reportRef = useRef(null);
+
+  // Competency key mapping
+  const competencyKeyMap = {
+    leadership_fundamentals: 'leadershipFundamentals',
+    change_management: 'changeManagement',
+    performance_management: 'performanceManagement',
+    team_building: 'teamBuilding',
+    communication: 'communication',
+    problem_solving: 'problemSolving',
+    emotional_intelligence: 'emotionalIntelligence',
+    strategic_implementation: 'strategicImplementation',
+    vision: 'vision',
+    team_leadership: 'teamLeadership',
+    decision_making: 'decisionMaking',
+    change: 'changeManagement',
+    accountability: 'accountability',
+    development: 'development',
+    integrity: 'integrity',
+    innovation: 'innovation'
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -27,11 +49,20 @@ const ThankYouPage = () => {
         
         if (latestReport) {
           setReport(latestReport);
+          
+          // Generate AI-powered analysis
+          const competencies = latestReport.data?.competencies || latestReport.data?.categories || [];
+          const responses = latestReport.data?.responses || [];
+          
+          if (competencies.length > 0) {
+            const analysis = generatePersonalizedAnalysis(responses, competencies, language);
+            setAiAnalysis(analysis);
+          }
         }
       }
     };
     init();
-  }, [type]);
+  }, [type, language]);
 
   // PDF Download Function
   const downloadPDF = async () => {
@@ -79,32 +110,12 @@ const ThankYouPage = () => {
 
   // Get performance level based on score
   const getPerformanceLevel = (score) => {
-    if (score >= 90) return { en: 'Outstanding', ar: 'متميز', color: 'text-emerald-600 bg-emerald-100', icon: '🏆' };
-    if (score >= 80) return { en: 'Excellent', ar: 'ممتاز', color: 'text-green-600 bg-green-100', icon: '⭐' };
-    if (score >= 70) return { en: 'Very Good', ar: 'جيد جداً', color: 'text-blue-600 bg-blue-100', icon: '✅' };
-    if (score >= 60) return { en: 'Good', ar: 'جيد', color: 'text-cyan-600 bg-cyan-100', icon: '👍' };
-    if (score >= 50) return { en: 'Satisfactory', ar: 'مقبول', color: 'text-yellow-600 bg-yellow-100', icon: '📊' };
-    return { en: 'Developing', ar: 'بحاجة للتطوير', color: 'text-orange-600 bg-orange-100', icon: '📈' };
-  };
-
-  // Map competency keys
-  const competencyKeyMap = {
-    leadership_fundamentals: 'leadershipFundamentals',
-    change_management: 'changeManagement',
-    performance_management: 'performanceManagement',
-    team_building: 'teamBuilding',
-    communication: 'communication',
-    problem_solving: 'problemSolving',
-    emotional_intelligence: 'emotionalIntelligence',
-    strategic_implementation: 'strategicImplementation',
-    vision: 'vision',
-    team_leadership: 'teamLeadership',
-    decision_making: 'decisionMaking',
-    change: 'changeManagement',
-    accountability: 'accountability',
-    development: 'development',
-    integrity: 'integrity',
-    innovation: 'innovation'
+    if (score >= 90) return { en: 'Outstanding', ar: 'متميز', color: 'text-emerald-600 bg-emerald-100', bgGradient: 'from-emerald-500 to-emerald-700', icon: '🏆' };
+    if (score >= 80) return { en: 'Excellent', ar: 'ممتاز', color: 'text-green-600 bg-green-100', bgGradient: 'from-green-500 to-green-700', icon: '⭐' };
+    if (score >= 70) return { en: 'Very Good', ar: 'جيد جداً', color: 'text-blue-600 bg-blue-100', bgGradient: 'from-blue-500 to-blue-700', icon: '✅' };
+    if (score >= 60) return { en: 'Good', ar: 'جيد', color: 'text-cyan-600 bg-cyan-100', bgGradient: 'from-cyan-500 to-cyan-700', icon: '👍' };
+    if (score >= 50) return { en: 'Satisfactory', ar: 'مقبول', color: 'text-yellow-600 bg-yellow-100', bgGradient: 'from-yellow-500 to-yellow-700', icon: '📊' };
+    return { en: 'Developing', ar: 'بحاجة للتطوير', color: 'text-orange-600 bg-orange-100', bgGradient: 'from-orange-500 to-orange-700', icon: '📈' };
   };
 
   // Get recommendation for an item
@@ -137,10 +148,10 @@ const ThankYouPage = () => {
         mainMessage: `We extend our sincere gratitude for completing the Kafaat AI Leadership Assessment. Your dedication to professional development and leadership growth is truly commendable.`,
         whatNext: "What Happens Next?",
         nextSteps: [
-          "Review your high-level results and download your report below",
-          "Your administrator will review your comprehensive detailed report",
-          "Personalized development recommendations will be provided based on your results",
-          "Consider focusing on your top development areas over the next 90 days"
+          "Review your personalized AI-powered results and insights below",
+          "Download your comprehensive report for future reference",
+          "Focus on your development priorities identified by the AI analysis",
+          "Track your progress using the recommended milestones"
         ]
       },
       ar: {
@@ -150,10 +161,10 @@ const ThankYouPage = () => {
         mainMessage: `نتقدم لك بخالص الشكر والتقدير على إكمالك تقييم كفاءات القيادي الذكي. إن تفانيك في التطوير المهني ونمو القيادة أمر يستحق الثناء.`,
         whatNext: "ماذا بعد؟",
         nextSteps: [
-          "راجع نتائجك الموجزة وقم بتحميل تقريرك أدناه",
-          "سيراجع المسؤول تقريرك التفصيلي الشامل",
-          "ستُقدم توصيات تطوير مخصصة بناءً على نتائجك",
-          "فكر في التركيز على مجالات التطوير الرئيسية خلال الـ 90 يوماً القادمة"
+          "راجع نتائجك ورؤاك المخصصة المدعومة بالذكاء الاصطناعي أدناه",
+          "قم بتحميل تقريرك الشامل للرجوع إليه مستقبلاً",
+          "ركز على أولويات التطوير المحددة من تحليل الذكاء الاصطناعي",
+          "تابع تقدمك باستخدام المعالم الموصى بها"
         ]
       }
     },
@@ -165,10 +176,10 @@ const ThankYouPage = () => {
         mainMessage: `We sincerely appreciate your thoughtful participation in completing the 360° Leadership Assessment. Your comprehensive feedback provides valuable insights for leadership development.`,
         whatNext: "What Happens Next?",
         nextSteps: [
-          "Review your high-level results and download your report below",
-          "All evaluator responses will be compiled for comprehensive analysis",
-          "A detailed 360° leadership report will be prepared",
-          "Development recommendations will be tailored to multi-rater feedback"
+          "Review your personalized AI-powered results and insights below",
+          "Download your comprehensive report for future reference",
+          "Focus on your development priorities identified by the AI analysis",
+          "Track your progress using the recommended milestones"
         ]
       },
       ar: {
@@ -178,10 +189,10 @@ const ThankYouPage = () => {
         mainMessage: `نقدر بصدق مشاركتك المدروسة في إكمال تقييم القيادة 360°. ملاحظاتك الشاملة توفر رؤى قيمة لتطوير القيادة.`,
         whatNext: "ماذا بعد؟",
         nextSteps: [
-          "راجع نتائجك الموجزة وقم بتحميل تقريرك أدناه",
-          "سيتم تجميع جميع ردود المقيّمين للتحليل الشامل",
-          "سيتم إعداد تقرير قيادة 360° مفصل",
-          "ستُصمم توصيات التطوير بناءً على ملاحظات متعددة المصادر"
+          "راجع نتائجك ورؤاك المخصصة المدعومة بالذكاء الاصطناعي أدناه",
+          "قم بتحميل تقريرك الشامل للرجوع إليه مستقبلاً",
+          "ركز على أولويات التطوير المحددة من تحليل الذكاء الاصطناعي",
+          "تابع تقدمك باستخدام المعالم الموصى بها"
         ]
       }
     }
@@ -192,24 +203,36 @@ const ThankYouPage = () => {
   const performanceLevel = report?.data?.overallScore ? getPerformanceLevel(report.data.overallScore) : null;
   const isKafaat = type === 'kafaat';
 
-  // Generate mini radar chart SVG
+  // Generate radar chart SVG
   const generateRadarChart = () => {
     const items = report?.data?.competencies || report?.data?.categories || [];
     const n = items.length;
     if (n === 0) return null;
     
-    const size = 160;
+    const size = 200;
     const center = size / 2;
-    const maxRadius = 60;
+    const maxRadius = 80;
     const angleStep = (2 * Math.PI) / n;
     
-    const gridCircles = [25, 50, 75, 100].map((pct) => {
+    // Grid circles
+    const gridCircles = [20, 40, 60, 80, 100].map((pct) => {
       const r = (pct / 100) * maxRadius;
       return (
-        <circle key={pct} cx={center} cy={center} r={r} fill="none" stroke="#e5e7eb" strokeWidth="1" />
+        <circle key={pct} cx={center} cy={center} r={r} fill="none" stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4,4" />
+      );
+    });
+
+    // Grid lines
+    const gridLines = items.map((_, i) => {
+      const angle = -Math.PI / 2 + i * angleStep;
+      const x2 = center + maxRadius * Math.cos(angle);
+      const y2 = center + maxRadius * Math.sin(angle);
+      return (
+        <line key={i} x1={center} y1={center} x2={x2} y2={y2} stroke="#e5e7eb" strokeWidth="1" />
       );
     });
     
+    // Data polygon
     const points = items.map((item, i) => {
       const angle = -Math.PI / 2 + i * angleStep;
       const r = (item.score / 100) * maxRadius;
@@ -218,26 +241,99 @@ const ThankYouPage = () => {
       return `${x},${y}`;
     }).join(' ');
     
+    // Labels
+    const labels = items.map((item, i) => {
+      const angle = -Math.PI / 2 + i * angleStep;
+      const labelR = maxRadius + 20;
+      const x = center + labelR * Math.cos(angle);
+      const y = center + labelR * Math.sin(angle);
+      const name = item.name?.[language] || item.name?.en || item.key;
+      const shortName = name.length > 12 ? name.substring(0, 10) + '...' : name;
+      
+      return (
+        <text 
+          key={i} 
+          x={x} 
+          y={y} 
+          textAnchor="middle" 
+          dominantBaseline="middle"
+          className="text-xs fill-gray-600"
+          fontSize="8"
+        >
+          {shortName}
+        </text>
+      );
+    });
+
     return (
-      <svg width={size} height={size} className="mx-auto">
+      <svg width={size} height={size} className="mx-auto" viewBox={`0 0 ${size} ${size}`}>
         {gridCircles}
+        {gridLines}
         <polygon
           points={points}
           fill={isKafaat ? "rgba(59, 130, 246, 0.3)" : "rgba(234, 179, 8, 0.3)"}
-          stroke={isKafaat ? "#3b82f6" : "#eab308"}
-          strokeWidth="2"
+          stroke={isKafaat ? "#2563eb" : "#ca8a04"}
+          strokeWidth="2.5"
         />
         {items.map((item, i) => {
           const angle = -Math.PI / 2 + i * angleStep;
           const r = (item.score / 100) * maxRadius;
           const x = center + r * Math.cos(angle);
           const y = center + r * Math.sin(angle);
+          const tier = getPerformanceTier(item.score);
+          const dotColor = tier === 'high' ? '#10b981' : tier === 'medium' ? '#3b82f6' : '#f59e0b';
           return (
-            <circle key={i} cx={x} cy={y} r="3" fill={isKafaat ? "#1e40af" : "#ca8a04"} />
+            <circle key={i} cx={x} cy={y} r="5" fill={dotColor} stroke="#fff" strokeWidth="2" />
           );
         })}
+        {labels}
       </svg>
     );
+  };
+
+  // Generate bar chart for competencies
+  const generateCompetencyBars = () => {
+    const items = report?.data?.competencies || report?.data?.categories || [];
+    
+    return items.sort((a, b) => b.score - a.score).map((item, index) => {
+      const tier = getPerformanceTier(item.score);
+      const barColor = tier === 'high' 
+        ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' 
+        : tier === 'medium' 
+          ? 'bg-gradient-to-r from-blue-400 to-blue-600'
+          : 'bg-gradient-to-r from-orange-400 to-orange-600';
+      
+      return (
+        <div key={index} className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm font-medium text-gray-700">
+              {item.name?.[language] || item.name?.en || item.key}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-0.5 text-xs rounded-full font-semibold ${
+                tier === 'high' ? 'bg-emerald-100 text-emerald-700' :
+                tier === 'medium' ? 'bg-blue-100 text-blue-700' :
+                'bg-orange-100 text-orange-700'
+              }`}>
+                {tier === 'high' 
+                  ? (language === 'en' ? 'Strong' : 'قوي')
+                  : tier === 'medium' 
+                    ? (language === 'en' ? 'Good' : 'جيد')
+                    : (language === 'en' ? 'Develop' : 'للتطوير')
+                }
+              </span>
+              <span className="text-sm font-bold text-gray-800">{item.score}%</span>
+            </div>
+          </div>
+          <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+            <div 
+              className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+              style={{ width: `${item.score}%` }}
+            />
+          </div>
+        </div>
+      );
+    });
   };
 
   return (
@@ -251,6 +347,11 @@ const ThankYouPage = () => {
             </div>
             <span className="font-semibold">
               {language === 'en' ? 'Kafaat Smart Evaluation' : 'منصة كفاءات للتقييم الذكي'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="px-3 py-1 bg-white/20 rounded-full">
+              {language === 'en' ? 'AI-Powered Analysis' : 'تحليل بالذكاء الاصطناعي'}
             </span>
           </div>
         </div>
@@ -274,14 +375,14 @@ const ThankYouPage = () => {
           <p className={`text-lg font-medium ${isKafaat ? 'text-blue-600' : 'text-yellow-600'}`}>{text.subtitle}</p>
         </div>
 
-        {/* Results Report Card */}
+        {/* AI-Powered Results Report Card */}
         {report && report.data && (
           <div ref={reportRef} className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
             {/* Report Header */}
-            <div className={`${isKafaat ? 'bg-gradient-to-r from-kafaat-navy to-blue-700' : 'bg-gradient-to-r from-yellow-500 to-orange-500'} text-white p-6`}>
+            <div className={`${isKafaat ? 'bg-gradient-to-r from-kafaat-navy via-blue-700 to-blue-800' : 'bg-gradient-to-r from-yellow-500 via-yellow-600 to-orange-500'} text-white p-6`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className={`w-16 h-16 rounded-xl flex items-center justify-center ${isKafaat ? 'bg-kafaat-gold' : 'bg-white'}`}>
+                  <div className={`w-16 h-16 rounded-xl flex items-center justify-center ${isKafaat ? 'bg-kafaat-gold' : 'bg-white'} shadow-lg`}>
                     <span className={`font-bold text-2xl ${isKafaat ? 'text-kafaat-navy' : 'text-yellow-600'}`}>K</span>
                   </div>
                   <div>
@@ -291,16 +392,18 @@ const ThankYouPage = () => {
                         : (language === 'en' ? '360° Leadership Assessment' : 'تقييم القيادة 360°')
                       }
                     </h2>
-                    <p className={`${isKafaat ? 'text-blue-200' : 'text-yellow-100'}`}>
-                      {language === 'en' ? 'Personalized Results Report' : 'تقرير النتائج المخصص'}
+                    <p className={`${isKafaat ? 'text-blue-200' : 'text-yellow-100'} flex items-center gap-2`}>
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                      {language === 'en' ? 'AI-Generated Personalized Report' : 'تقرير مخصص مُولّد بالذكاء الاصطناعي'}
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
                   <p className={`text-sm ${isKafaat ? 'text-blue-200' : 'text-yellow-100'}`}>
-                    {language === 'en' ? 'Completed' : 'مكتمل'}
+                    {language === 'en' ? 'Report ID' : 'رقم التقرير'}
                   </p>
-                  <p className="font-semibold">
+                  <p className="font-mono text-sm">{report.id?.slice(-8).toUpperCase() || 'N/A'}</p>
+                  <p className="font-semibold mt-1">
                     {new Date(report.completedAt).toLocaleDateString(language === 'ar' ? 'ar-QA' : 'en-US')}
                   </p>
                 </div>
@@ -309,13 +412,13 @@ const ThankYouPage = () => {
 
             {/* Candidate Info */}
             {user && (
-              <div className="bg-gray-50 p-4 border-b">
+              <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 border-b">
                 <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isKafaat ? 'bg-blue-100' : 'bg-yellow-100'}`}>
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center bg-gradient-to-br ${isKafaat ? 'from-blue-100 to-blue-200' : 'from-yellow-100 to-yellow-200'} shadow-inner`}>
                     <span className="text-2xl">👤</span>
                   </div>
-                  <div>
-                    <p className="font-bold text-gray-900">{language === 'ar' ? user.nameAr || user.name : user.name}</p>
+                  <div className="flex-1">
+                    <p className="font-bold text-gray-900 text-lg">{language === 'ar' ? user.nameAr || user.name : user.name}</p>
                     <p className="text-sm text-gray-500">{user.email}</p>
                     {(user.department || user.position) && (
                       <p className="text-sm text-gray-500">
@@ -325,34 +428,75 @@ const ThankYouPage = () => {
                       </p>
                     )}
                   </div>
+                  {aiAnalysis?.overallProfile && (
+                    <div className="text-right">
+                      <span className={`inline-block px-4 py-1 rounded-full text-sm font-bold ${isKafaat ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {aiAnalysis.overallProfile.type}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
+            {/* Executive Summary - AI Generated */}
+            {aiAnalysis?.overallProfile && (
+              <div className={`p-6 border-b ${isKafaat ? 'bg-blue-50/50' : 'bg-yellow-50/50'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xl">🤖</span>
+                  <h3 className="text-lg font-bold text-gray-800">
+                    {language === 'en' ? 'AI Executive Summary' : 'الملخص التنفيذي بالذكاء الاصطناعي'}
+                  </h3>
+                </div>
+                <p className="text-gray-700 leading-relaxed">
+                  {aiAnalysis.overallProfile.description}
+                </p>
+              </div>
+            )}
+
             {/* Overall Score & Radar Chart */}
-            <div className="p-6 grid md:grid-cols-2 gap-6 border-b">
+            <div className="p-6 grid md:grid-cols-2 gap-8 border-b">
               {/* Score Section */}
               <div className="text-center">
                 <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                  {language === 'en' ? 'Overall Score' : 'النتيجة الإجمالية'}
+                  {language === 'en' ? 'Overall Leadership Score' : 'النتيجة القيادية الإجمالية'}
                 </h3>
-                <div className="inline-flex flex-col items-center">
-                  <div className={`w-36 h-36 rounded-full flex flex-col items-center justify-center mb-3 border-4 ${
-                    report.data.overallScore >= 80 ? 'bg-green-50 border-green-400' :
-                    report.data.overallScore >= 60 ? 'bg-blue-50 border-blue-400' :
-                    report.data.overallScore >= 40 ? 'bg-yellow-50 border-yellow-400' : 'bg-red-50 border-red-400'
-                  }`}>
-                    <span className={`text-5xl font-bold ${
-                      report.data.overallScore >= 80 ? 'text-green-600' :
-                      report.data.overallScore >= 60 ? 'text-blue-600' :
-                      report.data.overallScore >= 40 ? 'text-yellow-600' : 'text-red-600'
-                    }`}>
-                      {report.data.overallScore}%
-                    </span>
-                    <span className="text-gray-500 text-sm">{language === 'en' ? 'Score' : 'النتيجة'}</span>
+                <div className="relative inline-flex flex-col items-center">
+                  {/* Score Circle */}
+                  <div className="relative">
+                    <svg className="w-44 h-44 transform -rotate-90">
+                      <circle
+                        cx="88"
+                        cy="88"
+                        r="75"
+                        fill="none"
+                        stroke="#e5e7eb"
+                        strokeWidth="12"
+                      />
+                      <circle
+                        cx="88"
+                        cy="88"
+                        r="75"
+                        fill="none"
+                        stroke={report.data.overallScore >= 80 ? '#10b981' : report.data.overallScore >= 60 ? '#3b82f6' : '#f59e0b'}
+                        strokeWidth="12"
+                        strokeLinecap="round"
+                        strokeDasharray={`${(report.data.overallScore / 100) * 471} 471`}
+                        className="transition-all duration-1000"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className={`text-5xl font-bold ${
+                        report.data.overallScore >= 80 ? 'text-emerald-600' :
+                        report.data.overallScore >= 60 ? 'text-blue-600' : 'text-orange-600'
+                      }`}>
+                        {report.data.overallScore}
+                      </span>
+                      <span className="text-gray-500 text-sm">{language === 'en' ? 'out of 100' : 'من 100'}</span>
+                    </div>
                   </div>
                   {performanceLevel && (
-                    <span className={`px-4 py-2 rounded-full font-semibold ${performanceLevel.color}`}>
+                    <span className={`mt-4 px-5 py-2 rounded-full font-bold text-lg ${performanceLevel.color}`}>
                       {performanceLevel.icon} {performanceLevel[language]}
                     </span>
                   )}
@@ -368,155 +512,206 @@ const ThankYouPage = () => {
               </div>
             </div>
 
-            {/* Key Metrics */}
-            <div className="p-6 grid grid-cols-4 gap-4 border-b bg-gray-50">
-              <div className="text-center">
-                <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 ${isKafaat ? 'bg-blue-100' : 'bg-yellow-100'}`}>
-                  <span className="text-2xl">📊</span>
+            {/* Leadership Style Analysis */}
+            {aiAnalysis?.leadershipStyle && (
+              <div className="p-6 border-b bg-gradient-to-r from-purple-50 to-pink-50">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-xl">🎯</span>
+                  <h3 className="text-lg font-bold text-gray-800">
+                    {language === 'en' ? 'Your Leadership Style' : 'أسلوبك القيادي'}
+                  </h3>
                 </div>
-                <p className="text-2xl font-bold text-gray-900">{report.data.totalQuestions}</p>
-                <p className="text-xs text-gray-500">{language === 'en' ? 'Questions' : 'سؤال'}</p>
+                <div className="bg-white rounded-xl p-5 shadow-sm border border-purple-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xl font-bold text-purple-800">{aiAnalysis.leadershipStyle.primary}</h4>
+                    <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full font-bold">
+                      {aiAnalysis.leadershipStyle.score}%
+                    </span>
+                  </div>
+                  <p className="text-gray-600">{aiAnalysis.leadershipStyle.description}</p>
+                </div>
               </div>
-              <div className="text-center">
-                <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 ${isKafaat ? 'bg-blue-100' : 'bg-yellow-100'}`}>
-                  <span className="text-2xl">📈</span>
-                </div>
-                <p className="text-2xl font-bold text-gray-900">{(report.data.competencies || report.data.categories || []).length}</p>
-                <p className="text-xs text-gray-500">{language === 'en' ? 'Dimensions' : 'أبعاد'}</p>
+            )}
+
+            {/* Competency Breakdown */}
+            <div className="p-6 border-b">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-xl">📊</span>
+                <h3 className="text-lg font-bold text-gray-800">
+                  {language === 'en' ? 'Detailed Competency Analysis' : 'تحليل الكفاءات التفصيلي'}
+                </h3>
               </div>
-              <div className="text-center">
-                <div className="w-12 h-12 mx-auto bg-green-100 rounded-xl flex items-center justify-center mb-2">
-                  <span className="text-2xl">💪</span>
-                </div>
-                <p className="text-2xl font-bold text-green-600">{(report.data.strengths || []).length}</p>
-                <p className="text-xs text-gray-500">{language === 'en' ? 'Strengths' : 'قوة'}</p>
-              </div>
-              <div className="text-center">
-                <div className="w-12 h-12 mx-auto bg-orange-100 rounded-xl flex items-center justify-center mb-2">
-                  <span className="text-2xl">🎯</span>
-                </div>
-                <p className="text-2xl font-bold text-orange-600">{(report.data.developmentAreas || []).length}</p>
-                <p className="text-xs text-gray-500">{language === 'en' ? 'Growth Areas' : 'مجالات نمو'}</p>
+              <div className="bg-gray-50 rounded-xl p-5">
+                {generateCompetencyBars()}
               </div>
             </div>
 
-            {/* Competencies Breakdown */}
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                {language === 'en' ? 'Competency Breakdown' : 'تفصيل الكفاءات'}
-              </h3>
-              <div className="grid gap-3">
-                {(report.data.competencies || report.data.categories || []).sort((a, b) => b.score - a.score).map((item, index) => {
-                  const tier = getPerformanceTier(item.score);
-                  return (
-                    <div key={index} className="flex items-center gap-4">
-                      <div className="w-36 md:w-44 text-sm text-gray-700 truncate font-medium">
-                        {item.name?.[language] || item.name?.en || item.key}
-                      </div>
-                      <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all flex items-center justify-end px-2 ${
-                            tier === 'high' ? 'bg-gradient-to-r from-green-400 to-green-500' :
-                            tier === 'medium' ? 'bg-gradient-to-r from-blue-400 to-blue-500' :
-                            'bg-gradient-to-r from-orange-400 to-orange-500'
-                          }`}
-                          style={{ width: `${Math.max(item.score, 10)}%` }}
-                        >
-                          <span className="text-white text-xs font-bold">{item.score}%</span>
+            {/* AI-Powered Insights */}
+            {aiAnalysis && (
+              <>
+                {/* Behavioral Insights */}
+                {aiAnalysis.behavioralInsights && aiAnalysis.behavioralInsights.length > 0 && (
+                  <div className="p-6 border-b bg-gradient-to-r from-cyan-50 to-blue-50">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xl">🧠</span>
+                      <h3 className="text-lg font-bold text-gray-800">
+                        {language === 'en' ? 'AI-Identified Leadership Tendencies' : 'النزعات القيادية المُحددة بالذكاء الاصطناعي'}
+                      </h3>
+                    </div>
+                    <div className="grid gap-3">
+                      {aiAnalysis.behavioralInsights.map((insight, index) => (
+                        <div key={index} className="bg-white rounded-lg p-4 shadow-sm border border-cyan-200">
+                          <h4 className="font-bold text-cyan-800 mb-1">{insight.type}</h4>
+                          <p className="text-gray-600 text-sm">{insight.description}</p>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Deep Strengths Analysis */}
+                {aiAnalysis.strengthsDeep && aiAnalysis.strengthsDeep.length > 0 && (
+                  <div className="p-6 border-b">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xl">💪</span>
+                      <h3 className="text-lg font-bold text-gray-800">
+                        {language === 'en' ? 'Your Signature Strengths' : 'نقاط قوتك المميزة'}
+                      </h3>
+                    </div>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {aiAnalysis.strengthsDeep.map((strength, index) => (
+                        <div key={index} className="bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl p-5 border border-emerald-200">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="w-8 h-8 bg-emerald-500 text-white rounded-full flex items-center justify-center font-bold">
+                              {index + 1}
+                            </span>
+                            <span className="text-2xl font-bold text-emerald-600">{strength.score}%</span>
+                          </div>
+                          <h4 className="font-bold text-emerald-800 mb-2">{strength.competency}</h4>
+                          <p className="text-sm text-emerald-700 mb-3">{strength.insight}</p>
+                          <div className="bg-white/60 rounded-lg p-3">
+                            <p className="text-xs font-medium text-emerald-600">
+                              <strong>{language === 'en' ? 'How to leverage:' : 'كيفية الاستفادة:'}</strong> {strength.leverageStrategy}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Development Priorities */}
+                {aiAnalysis.developmentPriorities && aiAnalysis.developmentPriorities.length > 0 && (
+                  <div className="p-6 border-b bg-gradient-to-r from-orange-50 to-amber-50">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xl">🎯</span>
+                      <h3 className="text-lg font-bold text-gray-800">
+                        {language === 'en' ? 'Priority Development Areas' : 'مجالات التطوير ذات الأولوية'}
+                      </h3>
+                    </div>
+                    <div className="space-y-4">
+                      {aiAnalysis.developmentPriorities.map((dev, index) => (
+                        <div key={index} className="bg-white rounded-xl p-5 shadow-sm border border-orange-200">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                                dev.priority === 'critical' ? 'bg-red-100 text-red-700' :
+                                dev.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+                                'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {dev.priorityLabel}
+                              </span>
+                              <h4 className="font-bold text-gray-800">{dev.competency}</h4>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-orange-600 font-bold">{dev.score}%</span>
+                              <span className="text-gray-400">→</span>
+                              <span className="text-emerald-600 font-bold">{dev.targetScore}%</span>
+                            </div>
+                          </div>
+                          <p className="text-gray-600 mb-3">{dev.insight}</p>
+                          <div className="bg-orange-50 rounded-lg p-4">
+                            <p className="text-sm text-orange-800 mb-2">
+                              <strong>{language === 'en' ? 'Recommended Actions:' : 'الإجراءات الموصى بها:'}</strong>
+                            </p>
+                            <ul className="space-y-1">
+                              {dev.specificActions.map((action, i) => (
+                                <li key={i} className="text-sm text-orange-700 flex items-start gap-2">
+                                  <span className="text-orange-500 mt-1">•</span>
+                                  {action}
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="text-xs text-orange-600 mt-2">
+                              <strong>{language === 'en' ? 'Target Timeline:' : 'الإطار الزمني المستهدف:'}</strong> {dev.timeline}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actionable Steps */}
+                {aiAnalysis.actionableSteps && (
+                  <div className="p-6 border-b">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xl">📋</span>
+                      <h3 className="text-lg font-bold text-gray-800">
+                        {language === 'en' ? 'Your Action Plan' : 'خطة عملك'}
+                      </h3>
+                    </div>
+                    <div className="relative">
+                      <div className={`absolute left-4 top-0 bottom-0 w-0.5 ${isKafaat ? 'bg-blue-200' : 'bg-yellow-200'}`}></div>
+                      <div className="space-y-4">
+                        {aiAnalysis.actionableSteps.map((step, index) => (
+                          <div key={index} className="relative pl-10">
+                            <div className={`absolute left-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
+                              isKafaat ? 'bg-blue-500' : 'bg-yellow-500'
+                            }`}>
+                              {index + 1}
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-4">
+                              <span className={`text-sm font-bold ${isKafaat ? 'text-blue-600' : 'text-yellow-600'}`}>
+                                {step.timeframe}
+                              </span>
+                              <p className="text-gray-700 mt-1">{step.action}</p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
+                  </div>
+                )}
 
-            {/* Strengths & Development Areas */}
-            <div className="grid md:grid-cols-2 gap-6 p-6 bg-gray-50">
-              {/* Strengths */}
-              <div className="bg-white rounded-xl p-5 border border-green-200 shadow-sm">
-                <h4 className="font-bold text-green-800 mb-3 flex items-center gap-2">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">💪</span>
-                  {language === 'en' ? 'Your Top Strengths' : 'أبرز نقاط قوتك'}
-                </h4>
-                <ul className="space-y-3">
-                  {(report.data.strengths || []).slice(0, 3).map((item, index) => {
-                    const rec = getRecommendation(item);
-                    return (
-                      <li key={index} className="bg-green-50 rounded-lg p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="w-5 h-5 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                            {index + 1}
-                          </span>
-                          <span className="font-medium text-green-800">
-                            {item.name?.[language] || item.name?.en || item.key}
-                          </span>
-                          <span className="ml-auto font-bold text-green-600">{item.score}%</span>
-                        </div>
-                        {rec?.insight && (
-                          <p className="text-sm text-green-700 ml-7">{rec.insight}</p>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-
-              {/* Development Areas */}
-              <div className="bg-white rounded-xl p-5 border border-orange-200 shadow-sm">
-                <h4 className="font-bold text-orange-800 mb-3 flex items-center gap-2">
-                  <span className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">🎯</span>
-                  {language === 'en' ? 'Growth Opportunities' : 'فرص النمو'}
-                </h4>
-                <ul className="space-y-3">
-                  {(report.data.developmentAreas || []).slice(0, 3).map((item, index) => {
-                    const rec = getRecommendation(item);
-                    return (
-                      <li key={index} className="bg-orange-50 rounded-lg p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="w-5 h-5 bg-orange-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                            {index + 1}
-                          </span>
-                          <span className="font-medium text-orange-800">
-                            {item.name?.[language] || item.name?.en || item.key}
-                          </span>
-                          <span className="ml-auto font-bold text-orange-600">{item.score}%</span>
-                        </div>
-                        {rec?.recommendation && (
-                          <p className="text-sm text-orange-700 ml-7">{rec.recommendation.slice(0, 100)}...</p>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </div>
-
-            {/* Personalized Quick Tips */}
-            <div className={`p-6 ${isKafaat ? 'bg-blue-50' : 'bg-yellow-50'}`}>
-              <h4 className={`font-bold mb-4 flex items-center gap-2 ${isKafaat ? 'text-blue-800' : 'text-yellow-800'}`}>
-                <span className={`w-8 h-8 rounded-full flex items-center justify-center ${isKafaat ? 'bg-blue-200' : 'bg-yellow-200'}`}>💡</span>
-                {language === 'en' ? 'Quick Development Tips' : 'نصائح تطوير سريعة'}
-              </h4>
-              <div className="grid md:grid-cols-2 gap-4">
-                {(report.data.developmentAreas || []).slice(0, 2).map((item, index) => {
-                  const rec = getRecommendation(item);
-                  return (
-                    <div key={index} className="bg-white rounded-lg p-4 shadow-sm">
-                      <p className="font-semibold text-gray-800 mb-2">
-                        {language === 'en' ? `Focus on: ${item.name?.en || item.key}` : `ركز على: ${item.name?.ar || item.key}`}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {rec?.recommendation || (language === 'en' 
-                          ? 'Continue developing this competency through practice and targeted learning.'
-                          : 'استمر في تطوير هذه الكفاءة من خلال الممارسة والتعلم المستهدف.'
-                        )}
-                      </p>
+                {/* Progress Milestones */}
+                {aiAnalysis.progressMetrics && (
+                  <div className={`p-6 ${isKafaat ? 'bg-blue-50' : 'bg-yellow-50'}`}>
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xl">🏁</span>
+                      <h3 className="text-lg font-bold text-gray-800">
+                        {language === 'en' ? '90-Day Progress Milestones' : 'معالم التقدم لـ 90 يوم'}
+                      </h3>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
+                    <div className="grid md:grid-cols-3 gap-4">
+                      {aiAnalysis.progressMetrics.milestones.map((milestone, index) => (
+                        <div key={index} className="bg-white rounded-xl p-4 shadow-sm">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
+                              isKafaat ? 'bg-blue-500' : 'bg-yellow-500'
+                            }`}>
+                              {milestone.days}
+                            </span>
+                            <span className="text-sm font-bold text-gray-600">{milestone.label}</span>
+                          </div>
+                          <p className="text-sm text-gray-700">{milestone.goal}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
             {/* Report Footer */}
             <div className={`p-4 text-center text-sm ${isKafaat ? 'bg-kafaat-navy' : 'bg-yellow-600'} text-white`}>

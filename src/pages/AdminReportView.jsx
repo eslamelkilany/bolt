@@ -6,6 +6,7 @@ import * as auth from '../utils/auth';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { kafaatCompetencyData, leadership360Data, getPerformanceTier, getCompetencyRecommendation, generateDevelopmentPlan } from '../data/reportRecommendations';
+import { generatePersonalizedAnalysis, generateExecutiveSummary } from '../utils/aiAnalysis';
 
 const AdminReportView = () => {
   const { userId, reportId } = useParams();
@@ -16,6 +17,7 @@ const AdminReportView = () => {
   const [allReports, setAllReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
   const reportRef = useRef(null);
 
   useEffect(() => {
@@ -34,18 +36,46 @@ const AdminReportView = () => {
       setUser(userData);
       setAllReports(userData.reports || []);
 
+      let selectedReport = null;
       if (reportId) {
-        const specificReport = userData.reports?.find(r => r.id === reportId);
-        setReport(specificReport);
+        selectedReport = userData.reports?.find(r => r.id === reportId);
       } else if (userData.reports?.length > 0) {
-        setReport(userData.reports[0]);
+        selectedReport = userData.reports[0];
+      }
+      
+      if (selectedReport) {
+        setReport(selectedReport);
+        
+        // Generate AI-powered analysis
+        const competencies = selectedReport.data?.competencies || selectedReport.data?.categories || [];
+        const responses = selectedReport.data?.responses || [];
+        
+        if (competencies.length > 0) {
+          const analysis = generatePersonalizedAnalysis(responses, competencies, language);
+          setAiAnalysis(analysis);
+        }
       }
 
       setLoading(false);
     };
     
     init();
-  }, [userId, reportId, navigate]);
+  }, [userId, reportId, navigate, language]);
+
+  // Update AI analysis when report changes
+  const handleReportChange = (newReport) => {
+    setReport(newReport);
+    
+    const competencies = newReport.data?.competencies || newReport.data?.categories || [];
+    const responses = newReport.data?.responses || [];
+    
+    if (competencies.length > 0) {
+      const analysis = generatePersonalizedAnalysis(responses, competencies, language);
+      setAiAnalysis(analysis);
+    } else {
+      setAiAnalysis(null);
+    }
+  };
 
   const downloadPDF = async () => {
     if (!reportRef.current || downloading) return;
@@ -213,14 +243,14 @@ const AdminReportView = () => {
     const n = items.length;
     if (n === 0) return null;
     
-    const size = 200;
+    const size = 220;
     const center = size / 2;
-    const maxRadius = 80;
+    const maxRadius = 85;
     
     const angleStep = (2 * Math.PI) / n;
     
     // Generate grid circles
-    const gridCircles = [25, 50, 75, 100].map((pct) => {
+    const gridCircles = [20, 40, 60, 80, 100].map((pct) => {
       const r = (pct / 100) * maxRadius;
       return (
         <circle
@@ -231,6 +261,7 @@ const AdminReportView = () => {
           fill="none"
           stroke="#e5e7eb"
           strokeWidth="1"
+          strokeDasharray="4,4"
         />
       );
     });
@@ -240,8 +271,6 @@ const AdminReportView = () => {
       const angle = -Math.PI / 2 + i * angleStep;
       const x = center + maxRadius * Math.cos(angle);
       const y = center + maxRadius * Math.sin(angle);
-      const labelX = center + (maxRadius + 15) * Math.cos(angle);
-      const labelY = center + (maxRadius + 15) * Math.sin(angle);
       
       return (
         <g key={i}>
@@ -273,21 +302,25 @@ const AdminReportView = () => {
         <polygon
           points={points}
           fill={isKafaat ? "rgba(59, 130, 246, 0.3)" : "rgba(234, 179, 8, 0.3)"}
-          stroke={isKafaat ? "#3b82f6" : "#eab308"}
-          strokeWidth="2"
+          stroke={isKafaat ? "#2563eb" : "#ca8a04"}
+          strokeWidth="2.5"
         />
         {items.map((item, i) => {
           const angle = -Math.PI / 2 + i * angleStep;
           const r = (item.score / 100) * maxRadius;
           const x = center + r * Math.cos(angle);
           const y = center + r * Math.sin(angle);
+          const tier = getPerformanceTier(item.score);
+          const dotColor = tier === 'high' ? '#10b981' : tier === 'medium' ? '#3b82f6' : '#f59e0b';
           return (
             <circle
               key={i}
               cx={x}
               cy={y}
-              r="4"
-              fill={isKafaat ? "#1e40af" : "#ca8a04"}
+              r="5"
+              fill={dotColor}
+              stroke="#fff"
+              strokeWidth="2"
             />
           );
         })}
@@ -342,7 +375,7 @@ const AdminReportView = () => {
               value={report.id}
               onChange={(e) => {
                 const selected = allReports.find(r => r.id === e.target.value);
-                setReport(selected);
+                handleReportChange(selected);
               }}
               className="w-full border border-gray-300 rounded-lg px-4 py-2"
             >
@@ -379,9 +412,10 @@ const AdminReportView = () => {
                       }
                     </h1>
                     <p className={`text-lg ${isKafaat ? 'text-blue-200' : 'text-yellow-100'}`}>
-                      {language === 'en' ? 'Comprehensive Leadership Analysis Report' : 'تقرير التحليل القيادي الشامل'}
+                      {language === 'en' ? 'AI-Powered Comprehensive Leadership Analysis Report' : 'تقرير التحليل القيادي الشامل المدعوم بالذكاء الاصطناعي'}
                     </p>
-                    <p className={`text-sm mt-2 ${isKafaat ? 'text-blue-300' : 'text-yellow-200'}`}>
+                    <p className={`text-sm mt-2 flex items-center gap-2 ${isKafaat ? 'text-blue-300' : 'text-yellow-200'}`}>
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
                       {new Date(report.completedAt).toLocaleDateString(language === 'ar' ? 'ar-QA' : 'en-US', {
                         year: 'numeric', month: 'long', day: 'numeric'
                       })}
@@ -430,13 +464,55 @@ const AdminReportView = () => {
                 <p className="font-bold text-gray-900">{user.position || '-'}</p>
               </div>
             </div>
+            {/* Leadership Profile Badge */}
+            {aiAnalysis?.overallProfile && (
+              <div className="mt-4 flex items-center gap-3">
+                <span className={`px-4 py-2 rounded-full font-bold ${isKafaat ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                  🎯 {aiAnalysis.overallProfile.type}
+                </span>
+                <span className="text-sm text-gray-500">
+                  {aiAnalysis.overallProfile.excellenceAreas} {language === 'en' ? 'Excellence Areas' : 'مجالات تميز'} | {aiAnalysis.overallProfile.developmentAreas} {language === 'en' ? 'Development Areas' : 'مجالات تطوير'}
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* Executive Summary */}
+          {/* AI Executive Summary */}
+          {aiAnalysis?.overallProfile && (
+            <div className={`p-6 border-b ${isKafaat ? 'bg-gradient-to-r from-blue-50 to-indigo-50' : 'bg-gradient-to-r from-yellow-50 to-orange-50'}`}>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-white">
+                  🤖
+                </span>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {language === 'en' ? 'AI-Powered Executive Summary' : 'الملخص التنفيذي بالذكاء الاصطناعي'}
+                </h2>
+              </div>
+              <p className="text-gray-700 leading-relaxed text-lg mb-4">
+                {aiAnalysis.overallProfile.description}
+              </p>
+              {aiAnalysis.leadershipStyle && (
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500">{language === 'en' ? 'Dominant Leadership Style' : 'الأسلوب القيادي السائد'}</p>
+                      <p className="text-xl font-bold text-purple-800">{aiAnalysis.leadershipStyle.primary}</p>
+                    </div>
+                    <span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-full font-bold text-lg">
+                      {aiAnalysis.leadershipStyle.score}%
+                    </span>
+                  </div>
+                  <p className="text-gray-600 mt-2 text-sm">{aiAnalysis.leadershipStyle.description}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Executive Summary with Key Metrics */}
           <div className="p-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
               <span className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">📈</span>
-              {language === 'en' ? 'Executive Summary' : 'الملخص التنفيذي'}
+              {language === 'en' ? 'Performance Overview' : 'نظرة عامة على الأداء'}
             </h2>
 
             {/* Key Metrics */}
@@ -563,7 +639,28 @@ const AdminReportView = () => {
               </div>
             </div>
 
-            {/* ===== DETAILED COMPETENCY ANALYSIS WITH RECOMMENDATIONS ===== */}
+            {/* ===== AI-POWERED BEHAVIORAL INSIGHTS ===== */}
+            {aiAnalysis?.behavioralInsights && aiAnalysis.behavioralInsights.length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                  <span className="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center">🧠</span>
+                  {language === 'en' ? 'AI-Identified Leadership Tendencies' : 'النزعات القيادية المُحددة بالذكاء الاصطناعي'}
+                </h2>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {aiAnalysis.behavioralInsights.map((insight, index) => (
+                    <div key={index} className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl p-5 border border-cyan-200">
+                      <h4 className="font-bold text-cyan-800 mb-2 flex items-center gap-2">
+                        <span className="w-8 h-8 bg-cyan-200 rounded-full flex items-center justify-center text-cyan-700">{index + 1}</span>
+                        {insight.type}
+                      </h4>
+                      <p className="text-gray-600">{insight.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ===== DETAILED COMPETENCY ANALYSIS WITH AI RECOMMENDATIONS ===== */}
             <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
               <span className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">📊</span>
               {language === 'en' ? 'Detailed Competency Analysis' : 'تحليل الكفاءات التفصيلي'}
@@ -627,7 +724,7 @@ const AdminReportView = () => {
                           <div className="bg-white rounded-xl p-4">
                             <h5 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
                               <span>💡</span>
-                              {language === 'en' ? 'Assessment Insight' : 'استنتاج التقييم'}
+                              {language === 'en' ? 'AI Assessment Insight' : 'استنتاج التقييم الذكي'}
                             </h5>
                             <p className="text-gray-600 text-sm">{recommendation.insight}</p>
                           </div>
@@ -665,7 +762,87 @@ const AdminReportView = () => {
               })}
             </div>
 
-            {/* Strengths & Development Areas - Side by Side */}
+            {/* AI Deep Strengths Analysis */}
+            {aiAnalysis?.strengthsDeep && aiAnalysis.strengthsDeep.length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                  <span className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">💪</span>
+                  {language === 'en' ? 'Signature Strengths (AI Analysis)' : 'نقاط القوة المميزة (تحليل الذكاء الاصطناعي)'}
+                </h2>
+                <div className="grid md:grid-cols-3 gap-4">
+                  {aiAnalysis.strengthsDeep.map((strength, index) => (
+                    <div key={index} className="bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl p-5 border border-emerald-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-10 h-10 bg-emerald-500 text-white rounded-full flex items-center justify-center font-bold">
+                          {index + 1}
+                        </span>
+                        <span className="text-2xl font-bold text-emerald-600">{strength.score}%</span>
+                      </div>
+                      <h4 className="font-bold text-emerald-800 mb-2">{strength.competency}</h4>
+                      <p className="text-sm text-emerald-700 mb-3">{strength.insight}</p>
+                      <div className="bg-white/60 rounded-lg p-3">
+                        <p className="text-xs font-medium text-emerald-600">
+                          <strong>{language === 'en' ? 'Leverage Strategy:' : 'استراتيجية الاستفادة:'}</strong> {strength.leverageStrategy}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI Development Priorities */}
+            {aiAnalysis?.developmentPriorities && aiAnalysis.developmentPriorities.length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                  <span className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">🎯</span>
+                  {language === 'en' ? 'Priority Development Areas (AI Recommendations)' : 'مجالات التطوير ذات الأولوية (توصيات الذكاء الاصطناعي)'}
+                </h2>
+                <div className="space-y-4">
+                  {aiAnalysis.developmentPriorities.map((dev, index) => (
+                    <div key={index} className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-5 border border-orange-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                            dev.priority === 'critical' ? 'bg-red-100 text-red-700' :
+                            dev.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {dev.priorityLabel}
+                          </span>
+                          <h4 className="font-bold text-gray-800 text-lg">{dev.competency}</h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-orange-600 font-bold text-lg">{dev.score}%</span>
+                          <span className="text-gray-400">→</span>
+                          <span className="text-emerald-600 font-bold text-lg">{dev.targetScore}%</span>
+                        </div>
+                      </div>
+                      <p className="text-gray-600 mb-3">{dev.insight}</p>
+                      <div className="bg-white rounded-lg p-4">
+                        <p className="text-sm font-semibold text-orange-800 mb-2">
+                          {language === 'en' ? 'Specific Actions:' : 'الإجراءات المحددة:'}
+                        </p>
+                        <ul className="space-y-1">
+                          {dev.specificActions.map((action, i) => (
+                            <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
+                              <span className="text-orange-500 mt-1">•</span>
+                              {action}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-xs text-orange-600 mt-3 flex items-center gap-2">
+                          <span>⏱️</span>
+                          <strong>{language === 'en' ? 'Timeline:' : 'الجدول الزمني:'}</strong> {dev.timeline}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Strengths & Development Areas - Side by Side (Original Summary) */}
             <div className="grid md:grid-cols-2 gap-6 mb-8">
               {/* Strengths */}
               <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200">
@@ -730,6 +907,36 @@ const AdminReportView = () => {
               </div>
             </div>
 
+            {/* AI Actionable Steps */}
+            {aiAnalysis?.actionableSteps && (
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                  <span className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">📋</span>
+                  {language === 'en' ? 'AI-Generated Action Plan' : 'خطة العمل المُولّدة بالذكاء الاصطناعي'}
+                </h2>
+                <div className="relative">
+                  <div className={`absolute ${isRTL ? 'right-4' : 'left-4'} top-0 bottom-0 w-0.5 ${isKafaat ? 'bg-blue-200' : 'bg-yellow-200'}`}></div>
+                  <div className="space-y-4">
+                    {aiAnalysis.actionableSteps.map((step, index) => (
+                      <div key={index} className={`relative ${isRTL ? 'pr-12' : 'pl-12'}`}>
+                        <div className={`absolute ${isRTL ? 'right-0' : 'left-0'} w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
+                          isKafaat ? 'bg-blue-500' : 'bg-yellow-500'
+                        }`}>
+                          {index + 1}
+                        </div>
+                        <div className="bg-gray-50 rounded-xl p-4 border">
+                          <span className={`text-sm font-bold ${isKafaat ? 'text-blue-600' : 'text-yellow-600'}`}>
+                            {step.timeframe}
+                          </span>
+                          <p className="text-gray-700 mt-1">{step.action}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ===== 90-DAY DEVELOPMENT PLAN ===== */}
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 mb-8 border border-indigo-200">
               <h3 className="text-xl font-bold text-indigo-800 mb-6 flex items-center gap-2">
@@ -769,6 +976,31 @@ const AdminReportView = () => {
                 ))}
               </div>
             </div>
+
+            {/* Progress Milestones */}
+            {aiAnalysis?.progressMetrics && (
+              <div className={`rounded-2xl p-6 mb-8 ${isKafaat ? 'bg-blue-50' : 'bg-yellow-50'} border ${isKafaat ? 'border-blue-200' : 'border-yellow-200'}`}>
+                <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <span className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow">🏁</span>
+                  {language === 'en' ? 'Progress Milestones' : 'معالم التقدم'}
+                </h3>
+                <div className="grid md:grid-cols-3 gap-4">
+                  {aiAnalysis.progressMetrics.milestones.map((milestone, index) => (
+                    <div key={index} className="bg-white rounded-xl p-4 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
+                          isKafaat ? 'bg-blue-500' : 'bg-yellow-500'
+                        }`}>
+                          {milestone.days}
+                        </span>
+                        <span className="text-sm font-bold text-gray-600">{milestone.label}</span>
+                      </div>
+                      <p className="text-sm text-gray-700">{milestone.goal}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Personalized Action Items */}
             <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-6 border border-cyan-200">
@@ -819,7 +1051,7 @@ const AdminReportView = () => {
               <span className="font-semibold">{language === 'en' ? 'Kafaat Smart Evaluation Platform' : 'منصة كفاءات للتقييم الذكي'}</span>
             </div>
             <p className="opacity-80">
-              {language === 'en' ? 'Powered by THOT Knowledge' : 'مدعوم من ثوت للمعرفة'}
+              {language === 'en' ? 'AI-Powered Leadership Analysis • Powered by THOT Knowledge' : 'تحليل قيادي بالذكاء الاصطناعي • مدعوم من ثوت للمعرفة'}
             </p>
             <p className="opacity-60 mt-2">
               {language === 'en' ? 'Report Generated:' : 'تاريخ إنشاء التقرير:'} {new Date().toLocaleDateString(language === 'ar' ? 'ar-QA' : 'en-US', {
