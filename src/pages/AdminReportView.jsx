@@ -46,13 +46,18 @@ const AdminReportView = () => {
       if (selectedReport) {
         setReport(selectedReport);
         
-        // Generate AI-powered analysis
-        const competencies = selectedReport.data?.competencies || selectedReport.data?.categories || [];
-        const responses = selectedReport.data?.responses || [];
-        
-        if (competencies.length > 0) {
-          const analysis = generatePersonalizedAnalysis(responses, competencies, language);
-          setAiAnalysis(analysis);
+        // Generate AI-powered analysis with error handling
+        try {
+          const competencies = selectedReport.data?.competencies || selectedReport.data?.categories || [];
+          const responses = selectedReport.data?.responses || [];
+          
+          if (competencies.length > 0) {
+            const analysis = generatePersonalizedAnalysis(responses, competencies, language);
+            setAiAnalysis(analysis);
+          }
+        } catch (error) {
+          console.error('Error generating AI analysis:', error);
+          setAiAnalysis(null);
         }
       }
 
@@ -66,13 +71,18 @@ const AdminReportView = () => {
   const handleReportChange = (newReport) => {
     setReport(newReport);
     
-    const competencies = newReport.data?.competencies || newReport.data?.categories || [];
-    const responses = newReport.data?.responses || [];
-    
-    if (competencies.length > 0) {
-      const analysis = generatePersonalizedAnalysis(responses, competencies, language);
-      setAiAnalysis(analysis);
-    } else {
+    try {
+      const competencies = newReport.data?.competencies || newReport.data?.categories || [];
+      const responses = newReport.data?.responses || [];
+      
+      if (competencies.length > 0) {
+        const analysis = generatePersonalizedAnalysis(responses, competencies, language);
+        setAiAnalysis(analysis);
+      } else {
+        setAiAnalysis(null);
+      }
+    } catch (error) {
+      console.error('Error generating AI analysis:', error);
       setAiAnalysis(null);
     }
   };
@@ -155,9 +165,37 @@ const AdminReportView = () => {
     );
   }
 
-  const data = report.data;
+  // Safety check for report data
+  const data = report.data || {};
   const isKafaat = report.assessmentType === 'kafaat';
-  const competencyData = isKafaat ? data.competencies : data.categories;
+  const competencyData = isKafaat ? (data.competencies || []) : (data.categories || []);
+  
+  // If no competency data available, show error state
+  if (!competencyData || competencyData.length === 0) {
+    return (
+      <div className={`min-h-screen bg-gray-50 ${isRTL ? 'rtl' : 'ltr'}`}>
+        <Header showLogout={true} isAdmin={true} />
+        <div className="max-w-4xl mx-auto px-4 py-20 text-center">
+          <span className="text-6xl block mb-4">⚠️</span>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+            {language === 'en' ? 'Report Data Incomplete' : 'بيانات التقرير غير مكتملة'}
+          </h1>
+          <p className="text-gray-600 mb-6">
+            {language === 'en' 
+              ? 'This report does not contain the required competency data. The assessment may have been interrupted.'
+              : 'لا يحتوي هذا التقرير على بيانات الكفاءات المطلوبة. ربما تم مقاطعة التقييم.'
+            }
+          </p>
+          <button
+            onClick={() => navigate('/admin')}
+            className="bg-kafaat-navy text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-800"
+          >
+            {language === 'en' ? 'Back to Admin Dashboard' : 'العودة للوحة التحكم'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Map assessment competency keys to recommendation data keys
   const competencyKeyMap = {
@@ -257,8 +295,8 @@ const AdminReportView = () => {
     return { level: language === 'en' ? 'Needs Improvement' : 'يحتاج تحسين', color: 'red', icon: '⚠️', bgClass: 'bg-red-500' };
   };
 
-  const performanceLevel = getPerformanceLevel(data.overallScore);
-  const developmentPlan = generateDevelopmentPlan(data.developmentAreas, language);
+  const performanceLevel = getPerformanceLevel(data.overallScore || 0);
+  const developmentPlan = generateDevelopmentPlan(data.developmentAreas || [], language);
 
   // Radar chart SVG generator
   const generateRadarChart = () => {

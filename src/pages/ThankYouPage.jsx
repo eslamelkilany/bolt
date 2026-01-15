@@ -53,13 +53,18 @@ const ThankYouPage = () => {
         if (latestReport) {
           setReport(latestReport);
           
-          // Generate AI-powered analysis
-          const competencies = latestReport.data?.competencies || latestReport.data?.categories || [];
-          const responses = latestReport.data?.responses || [];
-          
-          if (competencies.length > 0) {
-            const analysis = generatePersonalizedAnalysis(responses, competencies, language);
-            setAiAnalysis(analysis);
+          // Generate AI-powered analysis with error handling
+          try {
+            const competencies = latestReport.data?.competencies || latestReport.data?.categories || [];
+            const responses = latestReport.data?.responses || [];
+            
+            if (competencies.length > 0) {
+              const analysis = generatePersonalizedAnalysis(responses, competencies, language);
+              setAiAnalysis(analysis);
+            }
+          } catch (error) {
+            console.error('Error generating AI analysis:', error);
+            setAiAnalysis(null);
           }
         }
       }
