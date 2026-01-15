@@ -332,11 +332,11 @@ const UserAssessment = () => {
         icon: '🤖',
         name: { en: 'Kafaat AI Leadership Assessment', ar: 'تقييم كفاءات القيادي الذكي' },
         description: { 
-          en: 'This assessment evaluates your leadership competencies across 8 key areas using scenario-based questions.',
-          ar: 'يقيّم هذا التقييم كفاءاتك القيادية عبر 8 مجالات رئيسية باستخدام أسئلة قائمة على السيناريوهات.'
+          en: 'This comprehensive assessment evaluates your leadership competencies across 8 key areas using 40 scenario-based questions.',
+          ar: 'يقيّم هذا التقييم الشامل كفاءاتك القيادية عبر 8 مجالات رئيسية باستخدام 40 سؤال قائم على السيناريوهات.'
         },
-        questions: 16,
-        duration: '15-20'
+        questions: 40,
+        duration: '30-45'
       },
       '360': {
         icon: '🔄',

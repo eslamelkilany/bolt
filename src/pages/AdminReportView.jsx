@@ -222,42 +222,64 @@ const AdminReportView = () => {
 
   // Get competency name helper with recommendation data
   const getCompetencyInfo = (item) => {
-    const key = item.key || item.competency;
+    if (!item) return { name: 'Unknown', key: 'unknown', recommendationData: null };
+    
+    const key = item.key || item.competency || 'unknown';
     const mappedKey = competencyKeyMap[key] || key;
     const recommendationSource = isKafaat ? kafaatCompetencyData : leadership360Data;
-    const recommendationData = recommendationSource[mappedKey];
+    const recommendationData = recommendationSource?.[mappedKey] || null;
     
-    let displayName;
-    if (isKafaat) {
-      // Kafaat assessment uses bilingual name object
-      displayName = language === 'en' ? item.name?.en : item.name?.ar;
-    } else {
-      // 360 assessment - try multiple name formats
-      if (item.name && typeof item.name === 'object') {
-        // Format: { en: { name: '...', icon: '...' }, ar: { name: '...', icon: '...' } }
-        if (item.name[language]?.name) {
-          displayName = item.name[language].name;
-        } 
-        // Format: { en: '...', ar: '...' }
-        else if (typeof item.name[language] === 'string') {
-          displayName = item.name[language];
+    let displayName = null;
+    
+    try {
+      if (isKafaat) {
+        // Kafaat assessment uses bilingual name object: { en: '...', ar: '...' }
+        if (item.name && typeof item.name === 'object') {
+          displayName = item.name[language] || item.name.en || item.name.ar;
         }
-        // Fallback to English
-        else if (item.name.en?.name) {
-          displayName = item.name.en.name;
-        }
-        else if (typeof item.name.en === 'string') {
-          displayName = item.name.en;
+      } else {
+        // 360 assessment - try multiple name formats
+        if (item.name && typeof item.name === 'object') {
+          // Format: { en: { name: '...', icon: '...' }, ar: { name: '...', icon: '...' } }
+          if (item.name[language]?.name) {
+            displayName = item.name[language].name;
+          } 
+          // Format: { en: '...', ar: '...' }
+          else if (typeof item.name[language] === 'string') {
+            displayName = item.name[language];
+          }
+          // Fallback to English variants
+          else if (item.name.en?.name) {
+            displayName = item.name.en.name;
+          }
+          else if (typeof item.name.en === 'string') {
+            displayName = item.name.en;
+          }
+          // Fallback to Arabic variants
+          else if (item.name.ar?.name) {
+            displayName = item.name.ar.name;
+          }
+          else if (typeof item.name.ar === 'string') {
+            displayName = item.name.ar;
+          }
         }
       }
-      // Use recommendation data name as fallback
-      if (!displayName && recommendationData) {
-        displayName = recommendationData[language]?.name || recommendationData.en?.name;
-      }
-      // Final fallback
-      if (!displayName) {
-        displayName = key || 'Unknown';
-      }
+    } catch (e) {
+      console.warn('Error extracting display name:', e, item);
+    }
+    
+    // Use recommendation data name as fallback
+    if (!displayName && recommendationData) {
+      displayName = recommendationData[language]?.name || recommendationData?.en?.name || null;
+    }
+    
+    // Final fallback - format key to readable name
+    if (!displayName) {
+      displayName = key
+        .replace(/_/g, ' ')
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, str => str.toUpperCase())
+        .trim() || 'Unknown';
     }
     
     return {
@@ -269,19 +291,26 @@ const AdminReportView = () => {
 
   // Get specific recommendation based on score
   const getRecommendation = (item) => {
-    const { key, recommendationData } = getCompetencyInfo(item);
-    if (!recommendationData) return null;
+    if (!item) return null;
     
-    const tier = getPerformanceTier(item.score);
-    const langData = recommendationData[language] || recommendationData.en;
-    const performanceKey = tier === 'high' ? 'highPerformance' : tier === 'medium' ? 'mediumPerformance' : 'lowPerformance';
-    
-    return {
-      insight: langData[performanceKey]?.insight,
-      recommendation: langData[performanceKey]?.recommendation,
-      resources: recommendationData.resources || [],
-      tier
-    };
+    try {
+      const { key, recommendationData } = getCompetencyInfo(item);
+      if (!recommendationData) return { insight: null, recommendation: null, resources: [], tier: getPerformanceTier(item.score || 0) };
+      
+      const tier = getPerformanceTier(item.score || 0);
+      const langData = recommendationData[language] || recommendationData.en || {};
+      const performanceKey = tier === 'high' ? 'highPerformance' : tier === 'medium' ? 'mediumPerformance' : 'lowPerformance';
+      
+      return {
+        insight: langData[performanceKey]?.insight || null,
+        recommendation: langData[performanceKey]?.recommendation || null,
+        resources: recommendationData.resources || [],
+        tier
+      };
+    } catch (e) {
+      console.warn('Error getting recommendation:', e, item);
+      return { insight: null, recommendation: null, resources: [], tier: 'medium' };
+    }
   };
 
   // Performance level calculation
@@ -350,7 +379,7 @@ const AdminReportView = () => {
     // Generate data polygon
     const points = items.map((item, i) => {
       const angle = -Math.PI / 2 + i * angleStep;
-      const r = (item.score / 100) * maxRadius;
+      const r = ((item.score || 0) / 100) * maxRadius;
       const x = center + r * Math.cos(angle);
       const y = center + r * Math.sin(angle);
       return `${x},${y}`;
@@ -368,10 +397,10 @@ const AdminReportView = () => {
         />
         {items.map((item, i) => {
           const angle = -Math.PI / 2 + i * angleStep;
-          const r = (item.score / 100) * maxRadius;
+          const r = ((item.score || 0) / 100) * maxRadius;
           const x = center + r * Math.cos(angle);
           const y = center + r * Math.sin(angle);
-          const tier = getPerformanceTier(item.score);
+          const tier = getPerformanceTier(item.score || 0);
           const dotColor = tier === 'high' ? '#10b981' : tier === 'medium' ? '#3b82f6' : '#f59e0b';
           return (
             <circle
@@ -670,9 +699,10 @@ const AdminReportView = () => {
                   {language === 'en' ? 'Score Distribution' : 'توزيع الدرجات'}
                 </h3>
                 <div className="space-y-3">
-                  {competencyData?.sort((a, b) => b.score - a.score).map((item, index) => {
+                  {[...competencyData].sort((a, b) => (b.score || 0) - (a.score || 0)).map((item, index) => {
                     const info = getCompetencyInfo(item);
-                    const tier = getPerformanceTier(item.score);
+                    const score = item.score || 0;
+                    const tier = getPerformanceTier(score);
                     const barColor = tier === 'high' ? 'from-green-400 to-green-600' :
                                      tier === 'medium' ? 'from-blue-400 to-blue-600' :
                                      'from-orange-400 to-orange-600';
@@ -684,13 +714,13 @@ const AdminReportView = () => {
                             tier === 'high' ? 'text-green-600' :
                             tier === 'medium' ? 'text-blue-600' : 'text-orange-600'
                           }`}>
-                            {item.score}%
+                            {score}%
                           </span>
                         </div>
                         <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                           <div 
                             className={`h-full bg-gradient-to-r ${barColor} rounded-full transition-all duration-1000`}
-                            style={{ width: `${item.score}%` }}
+                            style={{ width: `${score}%` }}
                           ></div>
                         </div>
                       </div>
@@ -728,9 +758,10 @@ const AdminReportView = () => {
             </h2>
 
             <div className="space-y-6 mb-8">
-              {competencyData?.map((item, index) => {
+              {(competencyData || []).map((item, index) => {
                 const info = getCompetencyInfo(item);
                 const recommendation = getRecommendation(item);
+                const score = item.score || 0;
                 const tierColor = recommendation?.tier === 'high' ? 'border-green-400 bg-green-50' :
                                   recommendation?.tier === 'medium' ? 'border-blue-400 bg-blue-50' :
                                   'border-orange-400 bg-orange-50';
@@ -748,7 +779,7 @@ const AdminReportView = () => {
                             recommendation?.tier === 'medium' ? 'bg-blue-200 text-blue-700' :
                             'bg-orange-200 text-orange-700'
                           }`}>
-                            {item.score}
+                            {score}
                           </div>
                           <div>
                             <h4 className="text-lg font-bold text-gray-900">{info.name}</h4>
@@ -763,7 +794,7 @@ const AdminReportView = () => {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-3xl font-bold text-gray-900">{item.score}%</div>
+                          <div className="text-3xl font-bold text-gray-900">{score}%</div>
                         </div>
                       </div>
 
@@ -775,7 +806,7 @@ const AdminReportView = () => {
                             recommendation?.tier === 'medium' ? 'from-blue-400 to-blue-600' :
                             'from-orange-400 to-orange-600'
                           } rounded-full transition-all duration-1000`}
-                          style={{ width: `${item.score}%` }}
+                          style={{ width: `${score}%` }}
                         ></div>
                       </div>
 
@@ -787,7 +818,7 @@ const AdminReportView = () => {
                               <span>💡</span>
                               {language === 'en' ? 'AI Assessment Insight' : 'استنتاج التقييم الذكي'}
                             </h5>
-                            <p className="text-gray-600 text-sm">{recommendation.insight}</p>
+                            <p className="text-gray-600 text-sm">{recommendation.insight || (language === 'en' ? 'Analysis pending.' : 'التحليل قيد الانتظار.')}</p>
                           </div>
                           
                           {/* Recommendation */}
@@ -796,7 +827,7 @@ const AdminReportView = () => {
                               <span>🎯</span>
                               {language === 'en' ? 'Development Recommendation' : 'توصية التطوير'}
                             </h5>
-                            <p className="text-gray-600 text-sm">{recommendation.recommendation}</p>
+                            <p className="text-gray-600 text-sm">{recommendation.recommendation || (language === 'en' ? 'Continue developing in this area.' : 'استمر في التطوير في هذا المجال.')}</p>
                           </div>
                         </div>
                       )}
@@ -885,7 +916,7 @@ const AdminReportView = () => {
                           {language === 'en' ? 'Specific Actions:' : 'الإجراءات المحددة:'}
                         </p>
                         <ul className="space-y-1">
-                          {dev.specificActions.map((action, i) => (
+                          {(dev.specificActions || []).map((action, i) => (
                             <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
                               <span className="text-orange-500 mt-1">•</span>
                               {action}
@@ -912,8 +943,9 @@ const AdminReportView = () => {
                   {language === 'en' ? 'Top Strengths' : 'نقاط القوة الرئيسية'}
                 </h3>
                 <div className="space-y-3">
-                  {data.strengths?.map((s, i) => {
+                  {(data.strengths || []).map((s, i) => {
                     const info = getCompetencyInfo(s);
+                    const score = s.score || 0;
                     return (
                       <div key={i} className="bg-white rounded-xl p-4 shadow">
                         <div className="flex items-center justify-between mb-2">
@@ -923,7 +955,7 @@ const AdminReportView = () => {
                             </span>
                             <span className="font-medium text-gray-800">{info.name}</span>
                           </div>
-                          <span className="text-green-600 font-bold text-lg">{s.score}%</span>
+                          <span className="text-green-600 font-bold text-lg">{score}%</span>
                         </div>
                         <p className="text-sm text-gray-600 ml-11">
                           {language === 'en' 
@@ -944,9 +976,10 @@ const AdminReportView = () => {
                   {language === 'en' ? 'Development Priorities' : 'أولويات التطوير'}
                 </h3>
                 <div className="space-y-3">
-                  {data.developmentAreas?.map((d, i) => {
+                  {(data.developmentAreas || []).map((d, i) => {
                     const info = getCompetencyInfo(d);
                     const rec = getRecommendation(d);
+                    const score = d.score || 0;
                     return (
                       <div key={i} className="bg-white rounded-xl p-4 shadow">
                         <div className="flex items-center justify-between mb-2">
@@ -956,10 +989,10 @@ const AdminReportView = () => {
                             </span>
                             <span className="font-medium text-gray-800">{info.name}</span>
                           </div>
-                          <span className="text-orange-600 font-bold text-lg">{d.score}%</span>
+                          <span className="text-orange-600 font-bold text-lg">{score}%</span>
                         </div>
                         <p className="text-sm text-gray-600 ml-11">
-                          {rec?.recommendation?.slice(0, 100)}...
+                          {rec?.recommendation ? (rec.recommendation.length > 100 ? rec.recommendation.slice(0, 100) + '...' : rec.recommendation) : (language === 'en' ? 'Continue developing in this area.' : 'استمر في التطوير في هذا المجال.')}
                         </p>
                       </div>
                     );
@@ -978,7 +1011,7 @@ const AdminReportView = () => {
                 <div className="relative">
                   <div className={`absolute ${isRTL ? 'right-4' : 'left-4'} top-0 bottom-0 w-0.5 ${isKafaat ? 'bg-blue-200' : 'bg-yellow-200'}`}></div>
                   <div className="space-y-4">
-                    {aiAnalysis.actionableSteps.map((step, index) => (
+                    {(aiAnalysis.actionableSteps || []).map((step, index) => (
                       <div key={index} className={`relative ${isRTL ? 'pr-12' : 'pl-12'}`}>
                         <div className={`absolute ${isRTL ? 'right-0' : 'left-0'} w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
                           isKafaat ? 'bg-blue-500' : 'bg-yellow-500'
@@ -1046,7 +1079,7 @@ const AdminReportView = () => {
                   {language === 'en' ? 'Progress Milestones' : 'معالم التقدم'}
                 </h3>
                 <div className="grid md:grid-cols-3 gap-4">
-                  {aiAnalysis.progressMetrics.milestones.map((milestone, index) => (
+                  {(aiAnalysis.progressMetrics?.milestones || []).map((milestone, index) => (
                     <div key={index} className="bg-white rounded-xl p-4 shadow-sm">
                       <div className="flex items-center gap-2 mb-2">
                         <span className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
@@ -1070,9 +1103,10 @@ const AdminReportView = () => {
                 {language === 'en' ? 'Immediate Action Items' : 'بنود العمل الفورية'}
               </h3>
               <div className="space-y-4">
-                {data.developmentAreas?.slice(0, 3).map((area, i) => {
+                {(data.developmentAreas || []).slice(0, 3).map((area, i) => {
                   const info = getCompetencyInfo(area);
                   const rec = getRecommendation(area);
+                  const score = area.score || 0;
                   return (
                     <div key={i} className="bg-white rounded-xl p-4 shadow">
                       <div className="flex items-start gap-3">
@@ -1084,14 +1118,14 @@ const AdminReportView = () => {
                             {language === 'en' ? `Priority: ${info.name}` : `الأولوية: ${info.name}`}
                           </p>
                           <p className="text-gray-600 text-sm mb-2">
-                            {rec?.recommendation}
+                            {rec?.recommendation || (language === 'en' ? 'Continue developing in this area.' : 'استمر في التطوير في هذا المجال.')}
                           </p>
                           <div className="flex items-center gap-2 text-xs">
                             <span className="bg-cyan-100 text-cyan-700 px-2 py-1 rounded">
-                              {language === 'en' ? `Current: ${area.score}%` : `الحالي: ${area.score}%`}
+                              {language === 'en' ? `Current: ${score}%` : `الحالي: ${score}%`}
                             </span>
                             <span className="bg-green-100 text-green-700 px-2 py-1 rounded">
-                              {language === 'en' ? `Target: ${Math.min(area.score + 20, 100)}%` : `الهدف: ${Math.min(area.score + 20, 100)}%`}
+                              {language === 'en' ? `Target: ${Math.min(score + 20, 100)}%` : `الهدف: ${Math.min(score + 20, 100)}%`}
                             </span>
                           </div>
                         </div>
