@@ -17,8 +17,9 @@ const ThankYouPage = () => {
   const [downloading, setDownloading] = useState(false);
   const reportRef = useRef(null);
 
-  // Competency key mapping
+  // Competency key mapping - supports both Kafaat and 360 assessments
   const competencyKeyMap = {
+    // Kafaat mappings (snake_case from assessment responses)
     leadership_fundamentals: 'leadershipFundamentals',
     change_management: 'changeManagement',
     performance_management: 'performanceManagement',
@@ -27,10 +28,12 @@ const ThankYouPage = () => {
     problem_solving: 'problemSolving',
     emotional_intelligence: 'emotionalIntelligence',
     strategic_implementation: 'strategicImplementation',
+    // 360 mappings (direct camelCase from questions)
     vision: 'vision',
-    team_leadership: 'teamLeadership',
-    decision_making: 'decisionMaking',
-    change: 'changeManagement',
+    teamLeadership: 'teamLeadership',
+    decisionMaking: 'decisionMaking',
+    emotionalIntelligence: 'emotionalIntelligence',
+    changeManagement: 'changeManagement',
     accountability: 'accountability',
     development: 'development',
     integrity: 'integrity',
@@ -247,7 +250,24 @@ const ThankYouPage = () => {
       const labelR = maxRadius + 20;
       const x = center + labelR * Math.cos(angle);
       const y = center + labelR * Math.sin(angle);
-      const name = item.name?.[language] || item.name?.en || item.key;
+      // Handle different name formats for Kafaat vs 360 assessments
+      let name;
+      if (item.name?.[language]?.name) {
+        // 360 format: { en: { name: '...', icon: '...' } }
+        name = item.name[language].name;
+      } else if (typeof item.name?.[language] === 'string') {
+        // Kafaat format: { en: '...', ar: '...' }
+        name = item.name[language];
+      } else if (item.name?.en?.name) {
+        name = item.name.en.name;
+      } else if (typeof item.name?.en === 'string') {
+        name = item.name.en;
+      } else {
+        // Fallback to key with capitalization
+        const key = item.key || 'Unknown';
+        name = key.replace(/([A-Z])/g, ' $1').trim();
+        name = name.charAt(0).toUpperCase() + name.slice(1);
+      }
       const shortName = name.length > 12 ? name.substring(0, 10) + '...' : name;
       
       return (
@@ -291,6 +311,27 @@ const ThankYouPage = () => {
     );
   };
 
+  // Helper function to get display name for competency/category
+  const getDisplayName = (item) => {
+    // Handle different name formats for Kafaat vs 360 assessments
+    if (item.name?.[language]?.name) {
+      // 360 format: { en: { name: '...', icon: '...' } }
+      return item.name[language].name;
+    } else if (typeof item.name?.[language] === 'string') {
+      // Kafaat format: { en: '...', ar: '...' }
+      return item.name[language];
+    } else if (item.name?.en?.name) {
+      return item.name.en.name;
+    } else if (typeof item.name?.en === 'string') {
+      return item.name.en;
+    } else {
+      // Fallback to key with capitalization
+      const key = item.key || 'Unknown';
+      let name = key.replace(/([A-Z])/g, ' $1').trim();
+      return name.charAt(0).toUpperCase() + name.slice(1);
+    }
+  };
+
   // Generate bar chart for competencies
   const generateCompetencyBars = () => {
     const items = report?.data?.competencies || report?.data?.categories || [];
@@ -307,7 +348,7 @@ const ThankYouPage = () => {
         <div key={index} className="mb-4">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm font-medium text-gray-700">
-              {item.name?.[language] || item.name?.en || item.key}
+              {getDisplayName(item)}
             </span>
             <div className="flex items-center gap-2">
               <span className={`px-2 py-0.5 text-xs rounded-full font-semibold ${

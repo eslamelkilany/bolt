@@ -6,7 +6,9 @@ import { competencyAreas } from '../data/kafaatQuestions';
 import { leadership360Categories } from '../data/leadership360Questions';
 
 // Competency key mapping for consistent reference
+// Supports both Kafaat and 360 assessment types
 const competencyKeyMap = {
+  // Kafaat Assessment mappings
   leadership_fundamentals: 'leadershipFundamentals',
   change_management: 'changeManagement',
   performance_management: 'performanceManagement',
@@ -14,11 +16,22 @@ const competencyKeyMap = {
   communication: 'communication',
   problem_solving: 'problemSolving',
   emotional_intelligence: 'emotionalIntelligence',
-  strategic_implementation: 'strategicImplementation'
+  strategic_implementation: 'strategicImplementation',
+  // 360 Assessment mappings (direct mappings - keys match)
+  vision: 'vision',
+  teamLeadership: 'teamLeadership',
+  decisionMaking: 'decisionMaking',
+  emotionalIntelligence: 'emotionalIntelligence',
+  changeManagement: 'changeManagement',
+  accountability: 'accountability',
+  development: 'development',
+  integrity: 'integrity',
+  innovation: 'innovation'
 };
 
-// Reverse mapping for display names
+// Reverse mapping for display names - supports both Kafaat and 360 assessments
 const competencyDisplayNames = {
+  // Kafaat Assessment competencies
   leadershipFundamentals: {
     en: 'Leadership Fundamentals',
     ar: 'أساسيات القيادة'
@@ -50,6 +63,35 @@ const competencyDisplayNames = {
   strategicImplementation: {
     en: 'Strategic Implementation',
     ar: 'التنفيذ الاستراتيجي'
+  },
+  // 360 Assessment categories
+  vision: {
+    en: 'Vision & Strategic Thinking',
+    ar: 'الرؤية والتفكير الاستراتيجي'
+  },
+  teamLeadership: {
+    en: 'Team Leadership',
+    ar: 'قيادة الفريق'
+  },
+  decisionMaking: {
+    en: 'Decision Making',
+    ar: 'اتخاذ القرارات'
+  },
+  accountability: {
+    en: 'Accountability & Results',
+    ar: 'المساءلة والنتائج'
+  },
+  development: {
+    en: 'Development & Coaching',
+    ar: 'التطوير والتوجيه'
+  },
+  integrity: {
+    en: 'Integrity & Ethics',
+    ar: 'النزاهة والأخلاق'
+  },
+  innovation: {
+    en: 'Innovation & Adaptability',
+    ar: 'الابتكار والتكيف'
   }
 };
 
@@ -245,9 +287,10 @@ const generatePrioritizedDevelopment = (competencies, language) => {
   });
 };
 
-// Generate specific actions for each competency
+// Generate specific actions for each competency (supports both Kafaat and 360)
 const generateCompetencyActions = (competencyKey, tier, language) => {
   const actionsMap = {
+    // Kafaat competencies
     leadershipFundamentals: {
       low: {
         en: ['Study situational leadership models', 'Identify your leadership strengths through self-reflection', 'Find a leadership mentor'],
@@ -359,6 +402,105 @@ const generateCompetencyActions = (competencyKey, tier, language) => {
         en: ['Lead enterprise-level initiatives', 'Mentor others in strategic execution', 'Drive organizational transformation'],
         ar: ['قيادة مبادرات على مستوى المؤسسة', 'توجيه الآخرين في التنفيذ الاستراتيجي', 'دفع التحول المؤسسي']
       }
+    },
+    // 360 Assessment categories
+    vision: {
+      low: {
+        en: ['Study strategic planning frameworks', 'Practice articulating team vision', 'Connect daily work to organizational goals'],
+        ar: ['دراسة أطر التخطيط الاستراتيجي', 'ممارسة صياغة رؤية الفريق', 'ربط العمل اليومي بأهداف المنظمة']
+      },
+      medium: {
+        en: ['Lead strategic planning sessions', 'Translate high-level strategy to team objectives', 'Communicate vision more frequently'],
+        ar: ['قيادة جلسات التخطيط الاستراتيجي', 'ترجمة الاستراتيجية إلى أهداف الفريق', 'توصيل الرؤية بشكل أكثر تكراراً']
+      },
+      high: {
+        en: ['Lead cross-functional strategic initiatives', 'Mentor others in strategic thinking', 'Shape organizational direction'],
+        ar: ['قيادة مبادرات استراتيجية عبر الوظائف', 'توجيه الآخرين في التفكير الاستراتيجي', 'تشكيل اتجاه المنظمة']
+      }
+    },
+    teamLeadership: {
+      low: {
+        en: ['Build one-on-one relationships with team members', 'Practice delegation with clear expectations', 'Learn conflict resolution techniques'],
+        ar: ['بناء علاقات فردية مع أعضاء الفريق', 'ممارسة التفويض مع توقعات واضحة', 'تعلم تقنيات حل النزاعات']
+      },
+      medium: {
+        en: ['Create psychological safety in meetings', 'Optimize team composition and roles', 'Address conflicts proactively'],
+        ar: ['خلق الأمان النفسي في الاجتماعات', 'تحسين تكوين الفريق والأدوار', 'معالجة النزاعات بشكل استباقي']
+      },
+      high: {
+        en: ['Develop team leaders within your team', 'Build high-performing cross-functional teams', 'Create team culture of excellence'],
+        ar: ['تطوير قادة الفريق داخل فريقك', 'بناء فرق عالية الأداء عبر الوظائف', 'خلق ثقافة فريق متميزة']
+      }
+    },
+    decisionMaking: {
+      low: {
+        en: ['Use pros/cons analysis for decisions', 'Seek input from trusted advisors', 'Start with reversible decisions to build confidence'],
+        ar: ['استخدام تحليل الإيجابيات/السلبيات للقرارات', 'طلب المدخلات من المستشارين الموثوقين', 'البدء بقرارات قابلة للعكس لبناء الثقة']
+      },
+      medium: {
+        en: ['Set decision deadlines to avoid analysis paralysis', 'Create stakeholder input frameworks', 'Balance speed with thoroughness'],
+        ar: ['تحديد مواعيد نهائية للقرارات لتجنب شلل التحليل', 'إنشاء أطر لمدخلات أصحاب المصلحة', 'الموازنة بين السرعة والدقة']
+      },
+      high: {
+        en: ['Lead complex organizational decisions', 'Mentor others in decision frameworks', 'Drive strategic decision-making culture'],
+        ar: ['قيادة قرارات مؤسسية معقدة', 'توجيه الآخرين في أطر اتخاذ القرار', 'دفع ثقافة اتخاذ القرار الاستراتيجي']
+      }
+    },
+    accountability: {
+      low: {
+        en: ['Keep all commitments consistently', 'Set clear written expectations', 'Create simple tracking systems'],
+        ar: ['الحفاظ على جميع الالتزامات باستمرار', 'وضع توقعات واضحة مكتوبة', 'إنشاء أنظمة تتبع بسيطة']
+      },
+      medium: {
+        en: ['Create comprehensive tracking systems', 'Provide feedback more frequently', 'Hold regular accountability check-ins'],
+        ar: ['إنشاء أنظمة تتبع شاملة', 'تقديم التغذية الراجعة بشكل أكثر تكراراً', 'عقد جلسات متابعة المساءلة المنتظمة']
+      },
+      high: {
+        en: ['Model accountability culture', 'Establish organization-wide standards', 'Coach others in accountability practices'],
+        ar: ['نمذجة ثقافة المساءلة', 'وضع معايير على مستوى المنظمة', 'تدريب الآخرين على ممارسات المساءلة']
+      }
+    },
+    development: {
+      low: {
+        en: ['Hold regular one-on-ones focused on growth', 'Ask about team members\' career aspirations', 'Provide specific feedback on performance'],
+        ar: ['عقد لقاءات فردية منتظمة تركز على النمو', 'السؤال عن تطلعات أعضاء الفريق المهنية', 'تقديم تغذية راجعة محددة حول الأداء']
+      },
+      medium: {
+        en: ['Create individual development plans', 'Schedule regular coaching conversations', 'Provide growth opportunities'],
+        ar: ['إنشاء خطط تطوير فردية', 'جدولة محادثات توجيه منتظمة', 'توفير فرص النمو']
+      },
+      high: {
+        en: ['Formalize coaching approach', 'Lead talent development initiatives', 'Develop next generation of leaders'],
+        ar: ['ترسيم نهج التوجيه', 'قيادة مبادرات تطوير المواهب', 'تطوير الجيل القادم من القادة']
+      }
+    },
+    integrity: {
+      low: {
+        en: ['Keep all commitments including small ones', 'Admit mistakes openly', 'Ensure actions align with stated values'],
+        ar: ['الحفاظ على جميع الالتزامات بما فيها الصغيرة', 'الاعتراف بالأخطاء صراحة', 'ضمان توافق الأفعال مع القيم المعلنة']
+      },
+      medium: {
+        en: ['Communicate reasoning more openly', 'Be more transparent in decisions', 'Model ethical behavior consistently'],
+        ar: ['توصيل الأسباب بشكل أكثر انفتاحاً', 'كن أكثر شفافية في القرارات', 'نمذجة السلوك الأخلاقي باستمرار']
+      },
+      high: {
+        en: ['Champion ethics initiatives', 'Mentor others in ethical dilemmas', 'Build trust-based culture'],
+        ar: ['دعم مبادرات الأخلاق', 'توجيه الآخرين في المعضلات الأخلاقية', 'بناء ثقافة قائمة على الثقة']
+      }
+    },
+    innovation: {
+      low: {
+        en: ['Be more open to others\' ideas', 'Try small experiments before major changes', 'Celebrate learning from failures'],
+        ar: ['كن أكثر انفتاحاً لأفكار الآخرين', 'جرب تجارب صغيرة قبل التغييرات الكبرى', 'احتفل بالتعلم من الإخفاقات']
+      },
+      medium: {
+        en: ['Create space for experimentation', 'Ask "what if" questions more often', 'Encourage calculated risk-taking'],
+        ar: ['أنشئ مساحة للتجريب', 'اطرح أسئلة "ماذا لو" أكثر', 'شجع المخاطرة المحسوبة']
+      },
+      high: {
+        en: ['Lead innovation initiatives', 'Create structures for capturing new ideas', 'Drive continuous improvement culture'],
+        ar: ['قيادة مبادرات الابتكار', 'إنشاء هياكل لالتقاط الأفكار الجديدة', 'دفع ثقافة التحسين المستمر']
+      }
     }
   };
 
@@ -373,16 +515,16 @@ const generateCompetencyActions = (competencyKey, tier, language) => {
   return actions;
 };
 
-// Analyze behavioral tendencies from responses
+// Analyze behavioral tendencies from responses (supports both Kafaat and 360)
 const analyzeBehavioralTendencies = (responses, competencies, language) => {
   const tendencies = [];
   const strongCompetencies = competencies.filter(c => c.score >= 80);
   const weakCompetencies = competencies.filter(c => c.score < 60);
 
-  // Identify leadership style tendencies
+  // Check for people-oriented tendencies (supports both assessment types)
   if (strongCompetencies.some(c => 
     ['emotionalIntelligence', 'emotional_intelligence'].includes(c.key) ||
-    ['teamBuilding', 'team_building'].includes(c.key)
+    ['teamBuilding', 'team_building', 'teamLeadership', 'development'].includes(c.key)
   )) {
     tendencies.push({
       type: language === 'en' ? 'People-Oriented Leader' : 'قائد موجه نحو الناس',
@@ -392,8 +534,9 @@ const analyzeBehavioralTendencies = (responses, competencies, language) => {
     });
   }
 
+  // Check for results-driven tendencies (supports both assessment types)
   if (strongCompetencies.some(c => 
-    ['strategicImplementation', 'strategic_implementation'].includes(c.key) ||
+    ['strategicImplementation', 'strategic_implementation', 'accountability', 'decisionMaking'].includes(c.key) ||
     ['problemSolving', 'problem_solving'].includes(c.key)
   )) {
     tendencies.push({
@@ -404,14 +547,39 @@ const analyzeBehavioralTendencies = (responses, competencies, language) => {
     });
   }
 
+  // Check for change agent tendencies (supports both assessment types)
   if (strongCompetencies.some(c => 
-    ['changeManagement', 'change_management'].includes(c.key)
+    ['changeManagement', 'change_management', 'innovation'].includes(c.key)
   )) {
     tendencies.push({
       type: language === 'en' ? 'Change Agent' : 'وكيل التغيير',
       description: language === 'en'
         ? 'You have strong capabilities in leading organizational transformation and managing transitions.'
         : 'لديك قدرات قوية في قيادة التحول المؤسسي وإدارة الانتقالات.'
+    });
+  }
+
+  // Check for visionary tendencies (360 specific)
+  if (strongCompetencies.some(c => 
+    ['vision'].includes(c.key)
+  )) {
+    tendencies.push({
+      type: language === 'en' ? 'Visionary Leader' : 'قائد رؤيوي',
+      description: language === 'en'
+        ? 'You excel at setting direction, communicating vision, and aligning teams with strategic goals.'
+        : 'تتفوق في تحديد الاتجاه وتوصيل الرؤية ومواءمة الفرق مع الأهداف الاستراتيجية.'
+    });
+  }
+
+  // Check for ethical leader tendencies (360 specific)
+  if (strongCompetencies.some(c => 
+    ['integrity'].includes(c.key)
+  )) {
+    tendencies.push({
+      type: language === 'en' ? 'Ethical Leader' : 'قائد أخلاقي',
+      description: language === 'en'
+        ? 'You demonstrate exceptional integrity and build deep trust through consistent ethical behavior.'
+        : 'تُظهر نزاهة استثنائية وتبني ثقة عميقة من خلال السلوك الأخلاقي المتسق.'
     });
   }
 
@@ -466,7 +634,7 @@ const generateActionableSteps = (competencies, language) => {
   return steps;
 };
 
-// Identify leadership style based on competencies
+// Identify leadership style based on competencies (supports both Kafaat and 360)
 const identifyLeadershipStyle = (competencies, language) => {
   const scores = {};
   competencies.forEach(c => {
@@ -474,30 +642,54 @@ const identifyLeadershipStyle = (competencies, language) => {
     scores[key] = c.score;
   });
 
+  // Detect assessment type based on available keys
+  const is360 = scores.vision !== undefined || scores.teamLeadership !== undefined || scores.accountability !== undefined;
+
   // Calculate style scores
   const styles = [];
+  let transformationalScore, taskScore, peopleScore;
 
-  // Transformational Leadership Score
-  const transformationalScore = (
-    (scores.leadershipFundamentals || 0) * 0.3 +
-    (scores.changeManagement || 0) * 0.25 +
-    (scores.communication || 0) * 0.25 +
-    (scores.emotionalIntelligence || 0) * 0.2
-  );
+  if (is360) {
+    // 360 Assessment scoring
+    transformationalScore = (
+      (scores.vision || 0) * 0.3 +
+      (scores.changeManagement || 0) * 0.25 +
+      (scores.communication || 0) * 0.25 +
+      (scores.emotionalIntelligence || 0) * 0.2
+    );
 
-  // Task-Oriented Leadership Score
-  const taskScore = (
-    (scores.performanceManagement || 0) * 0.3 +
-    (scores.problemSolving || 0) * 0.3 +
-    (scores.strategicImplementation || 0) * 0.4
-  );
+    taskScore = (
+      (scores.accountability || 0) * 0.35 +
+      (scores.decisionMaking || 0) * 0.35 +
+      (scores.innovation || 0) * 0.3
+    );
 
-  // People-Oriented Leadership Score
-  const peopleScore = (
-    (scores.teamBuilding || 0) * 0.35 +
-    (scores.emotionalIntelligence || 0) * 0.35 +
-    (scores.communication || 0) * 0.3
-  );
+    peopleScore = (
+      (scores.teamLeadership || 0) * 0.35 +
+      (scores.emotionalIntelligence || 0) * 0.3 +
+      (scores.development || 0) * 0.35
+    );
+  } else {
+    // Kafaat Assessment scoring
+    transformationalScore = (
+      (scores.leadershipFundamentals || 0) * 0.3 +
+      (scores.changeManagement || 0) * 0.25 +
+      (scores.communication || 0) * 0.25 +
+      (scores.emotionalIntelligence || 0) * 0.2
+    );
+
+    taskScore = (
+      (scores.performanceManagement || 0) * 0.3 +
+      (scores.problemSolving || 0) * 0.3 +
+      (scores.strategicImplementation || 0) * 0.4
+    );
+
+    peopleScore = (
+      (scores.teamBuilding || 0) * 0.35 +
+      (scores.emotionalIntelligence || 0) * 0.35 +
+      (scores.communication || 0) * 0.3
+    );
+  }
 
   if (transformationalScore >= taskScore && transformationalScore >= peopleScore) {
     styles.push({

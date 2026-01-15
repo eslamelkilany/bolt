@@ -161,7 +161,7 @@ const AdminReportView = () => {
 
   // Map assessment competency keys to recommendation data keys
   const competencyKeyMap = {
-    // Kafaat mappings
+    // Kafaat mappings (snake_case from assessment responses)
     leadership_fundamentals: 'leadershipFundamentals',
     change_management: 'changeManagement',
     performance_management: 'performanceManagement',
@@ -170,11 +170,12 @@ const AdminReportView = () => {
     problem_solving: 'problemSolving',
     emotional_intelligence: 'emotionalIntelligence',
     strategic_implementation: 'strategicImplementation',
-    // 360 mappings
+    // 360 mappings (direct mappings - these are already correct camelCase from questions)
     vision: 'vision',
-    team_leadership: 'teamLeadership',
-    decision_making: 'decisionMaking',
-    change: 'changeManagement',
+    teamLeadership: 'teamLeadership',
+    decisionMaking: 'decisionMaking',
+    emotionalIntelligence: 'emotionalIntelligence',
+    changeManagement: 'changeManagement',
     accountability: 'accountability',
     development: 'development',
     integrity: 'integrity',
@@ -190,12 +191,34 @@ const AdminReportView = () => {
     
     let displayName;
     if (isKafaat) {
+      // Kafaat assessment uses bilingual name object
       displayName = language === 'en' ? item.name?.en : item.name?.ar;
     } else {
-      if (item.name && item.name[language]) {
-        displayName = item.name[language].name || item.name[language];
-      } else {
-        displayName = item.key || 'Unknown';
+      // 360 assessment - try multiple name formats
+      if (item.name && typeof item.name === 'object') {
+        // Format: { en: { name: '...', icon: '...' }, ar: { name: '...', icon: '...' } }
+        if (item.name[language]?.name) {
+          displayName = item.name[language].name;
+        } 
+        // Format: { en: '...', ar: '...' }
+        else if (typeof item.name[language] === 'string') {
+          displayName = item.name[language];
+        }
+        // Fallback to English
+        else if (item.name.en?.name) {
+          displayName = item.name.en.name;
+        }
+        else if (typeof item.name.en === 'string') {
+          displayName = item.name.en;
+        }
+      }
+      // Use recommendation data name as fallback
+      if (!displayName && recommendationData) {
+        displayName = recommendationData[language]?.name || recommendationData.en?.name;
+      }
+      // Final fallback
+      if (!displayName) {
+        displayName = key || 'Unknown';
       }
     }
     
