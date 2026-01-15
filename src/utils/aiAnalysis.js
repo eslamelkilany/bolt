@@ -97,12 +97,27 @@ const competencyDisplayNames = {
 
 // Generate AI-powered personalized analysis based on user responses
 export const generatePersonalizedAnalysis = (responses, competencyResults, language = 'en') => {
+  // Safety check - ensure competencyResults is a valid array
+  if (!competencyResults || !Array.isArray(competencyResults) || competencyResults.length === 0) {
+    console.warn('generatePersonalizedAnalysis: Invalid or empty competencyResults');
+    return {
+      overallProfile: { type: language === 'en' ? 'Assessment Pending' : 'التقييم معلق', description: language === 'en' ? 'No competency data available.' : 'لا تتوفر بيانات الكفاءات.', averageScore: 0, excellenceAreas: 0, developmentAreas: 0 },
+      patternAnalysis: [],
+      strengthsDeep: [],
+      developmentPriorities: [],
+      behavioralInsights: [],
+      actionableSteps: [],
+      leadershipStyle: null,
+      progressMetrics: { currentOverall: 0, targetOverall: 0, competencyTargets: [], milestones: [] }
+    };
+  }
+  
   const analysis = {
     overallProfile: generateOverallProfile(competencyResults, language),
-    patternAnalysis: analyzeResponsePatterns(responses, language),
+    patternAnalysis: analyzeResponsePatterns(responses || [], language),
     strengthsDeep: generateDeepStrengthsAnalysis(competencyResults, language),
     developmentPriorities: generatePrioritizedDevelopment(competencyResults, language),
-    behavioralInsights: analyzeBehavioralTendencies(responses, competencyResults, language),
+    behavioralInsights: analyzeBehavioralTendencies(responses || [], competencyResults, language),
     actionableSteps: generateActionableSteps(competencyResults, language),
     leadershipStyle: identifyLeadershipStyle(competencyResults, language),
     progressMetrics: createProgressMetrics(competencyResults, language)
@@ -113,9 +128,13 @@ export const generatePersonalizedAnalysis = (responses, competencyResults, langu
 
 // Generate overall leadership profile based on scores
 const generateOverallProfile = (competencies, language) => {
-  const avgScore = competencies.reduce((sum, c) => sum + c.score, 0) / competencies.length;
-  const highScores = competencies.filter(c => c.score >= 80);
-  const lowScores = competencies.filter(c => c.score < 60);
+  if (!competencies || competencies.length === 0) {
+    return { type: language === 'en' ? 'Assessment Pending' : 'التقييم معلق', description: '', averageScore: 0, excellenceAreas: 0, developmentAreas: 0 };
+  }
+  
+  const avgScore = competencies.reduce((sum, c) => sum + (c.score || 0), 0) / competencies.length;
+  const highScores = competencies.filter(c => (c.score || 0) >= 80);
+  const lowScores = competencies.filter(c => (c.score || 0) < 60);
   
   let profileType, description;
   
@@ -211,22 +230,53 @@ const calculateScoreVariation = (responses) => {
   return Math.sqrt(variance);
 };
 
+// Helper function to extract display name from item (handles both Kafaat and 360 formats)
+const getItemDisplayName = (item, language) => {
+  if (!item.name) {
+    // Fallback to key with formatting
+    const key = item.key || 'Unknown';
+    return competencyDisplayNames[key]?.[language] || key.replace(/([A-Z])/g, ' $1').trim();
+  }
+  
+  // 360 format: { en: { name: '...', icon: '...' }, ar: { name: '...', icon: '...' } }
+  if (item.name[language]?.name) {
+    return item.name[language].name;
+  }
+  // Kafaat format: { en: '...', ar: '...' }
+  if (typeof item.name[language] === 'string') {
+    return item.name[language];
+  }
+  // Fallback to English
+  if (item.name.en?.name) {
+    return item.name.en.name;
+  }
+  if (typeof item.name.en === 'string') {
+    return item.name.en;
+  }
+  // Final fallback
+  const key = item.key || 'Unknown';
+  return competencyDisplayNames[key]?.[language] || key;
+};
+
 // Generate deep analysis for strengths
 const generateDeepStrengthsAnalysis = (competencies, language) => {
-  const strengths = competencies.filter(c => c.score >= 70).slice(0, 3);
+  if (!competencies || competencies.length === 0) return [];
+  
+  const strengths = competencies.filter(c => (c.score || 0) >= 70).slice(0, 3);
   
   return strengths.map(strength => {
-    const key = strength.key;
+    const key = strength.key || '';
     const mappedKey = competencyKeyMap[key] || key;
     const competencyData = kafaatCompetencyData[mappedKey] || leadership360Data[mappedKey];
-    const tier = getPerformanceTier(strength.score);
+    const score = strength.score || 0;
+    const tier = getPerformanceTier(score);
     
     let leverageStrategy;
-    if (strength.score >= 90) {
+    if (score >= 90) {
       leverageStrategy = language === 'en'
         ? 'This is a signature strength. Consider mentoring others and taking on complex challenges that showcase this capability.'
         : 'هذه نقطة قوة مميزة. فكر في توجيه الآخرين وتولي تحديات معقدة تُبرز هذه القدرة.';
-    } else if (strength.score >= 80) {
+    } else if (score >= 80) {
       leverageStrategy = language === 'en'
         ? 'You have strong capabilities here. Apply this strength to help compensate for development areas.'
         : 'لديك قدرات قوية هنا. طبّق هذه القوة للمساعدة في تعويض مجالات التطوير.';
@@ -237,8 +287,8 @@ const generateDeepStrengthsAnalysis = (competencies, language) => {
     }
 
     return {
-      competency: strength.name?.[language] || strength.name?.en || key,
-      score: strength.score,
+      competency: getItemDisplayName(strength, language),
+      score: score,
       tier,
       insight: competencyData?.[language]?.[`${tier}Performance`]?.insight || 
                competencyData?.en?.[`${tier}Performance`]?.insight ||
@@ -250,24 +300,27 @@ const generateDeepStrengthsAnalysis = (competencies, language) => {
 
 // Generate prioritized development recommendations
 const generatePrioritizedDevelopment = (competencies, language) => {
+  if (!competencies || competencies.length === 0) return [];
+  
   const development = competencies
-    .filter(c => c.score < 70)
-    .sort((a, b) => a.score - b.score)
+    .filter(c => (c.score || 0) < 70)
+    .sort((a, b) => (a.score || 0) - (b.score || 0))
     .slice(0, 3);
 
   return development.map((dev, index) => {
-    const key = dev.key;
+    const key = dev.key || '';
     const mappedKey = competencyKeyMap[key] || key;
     const competencyData = kafaatCompetencyData[mappedKey] || leadership360Data[mappedKey];
-    const tier = getPerformanceTier(dev.score);
+    const score = dev.score || 0;
+    const tier = getPerformanceTier(score);
     const priority = index === 0 ? 'critical' : index === 1 ? 'high' : 'medium';
 
     // Generate specific actions based on competency
     const specificActions = generateCompetencyActions(mappedKey, tier, language);
 
     return {
-      competency: dev.name?.[language] || dev.name?.en || key,
-      score: dev.score,
+      competency: getItemDisplayName(dev, language),
+      score: score,
       priority,
       priorityLabel: language === 'en' 
         ? (priority === 'critical' ? 'Critical Priority' : priority === 'high' ? 'High Priority' : 'Medium Priority')
@@ -279,7 +332,7 @@ const generatePrioritizedDevelopment = (competencies, language) => {
                       competencyData?.en?.[`${tier}Performance`]?.recommendation ||
                       (language === 'en' ? 'Focus on targeted skill building.' : 'ركز على بناء مهارات مستهدفة.'),
       specificActions,
-      targetScore: Math.min(dev.score + 20, 100),
+      targetScore: Math.min(score + 20, 100),
       timeline: language === 'en' 
         ? `${30 * (index + 1)} days`
         : `${30 * (index + 1)} يوم`
@@ -517,9 +570,11 @@ const generateCompetencyActions = (competencyKey, tier, language) => {
 
 // Analyze behavioral tendencies from responses (supports both Kafaat and 360)
 const analyzeBehavioralTendencies = (responses, competencies, language) => {
+  if (!competencies || competencies.length === 0) return [];
+  
   const tendencies = [];
-  const strongCompetencies = competencies.filter(c => c.score >= 80);
-  const weakCompetencies = competencies.filter(c => c.score < 60);
+  const strongCompetencies = competencies.filter(c => (c.score || 0) >= 80);
+  const weakCompetencies = competencies.filter(c => (c.score || 0) < 60);
 
   // Check for people-oriented tendencies (supports both assessment types)
   if (strongCompetencies.some(c => 
@@ -586,7 +641,7 @@ const analyzeBehavioralTendencies = (responses, competencies, language) => {
   // Add development focus
   if (weakCompetencies.length > 0) {
     const focusAreas = weakCompetencies.map(c => 
-      c.name?.[language] || c.name?.en || c.key
+      getItemDisplayName(c, language)
     ).join(', ');
     tendencies.push({
       type: language === 'en' ? 'Development Focus' : 'محور التطوير',
@@ -601,15 +656,21 @@ const analyzeBehavioralTendencies = (responses, competencies, language) => {
 
 // Generate actionable next steps
 const generateActionableSteps = (competencies, language) => {
-  const lowestCompetency = [...competencies].sort((a, b) => a.score - b.score)[0];
-  const highestCompetency = [...competencies].sort((a, b) => b.score - a.score)[0];
+  if (!competencies || competencies.length === 0) return [];
+  
+  const sortedByScore = [...competencies].sort((a, b) => (a.score || 0) - (b.score || 0));
+  const lowestCompetency = sortedByScore[0];
+  const highestCompetency = sortedByScore[sortedByScore.length - 1];
+  
+  const lowestName = lowestCompetency ? getItemDisplayName(lowestCompetency, language) : (language === 'en' ? 'your lowest area' : 'مجالك الأدنى');
+  const highestName = highestCompetency ? getItemDisplayName(highestCompetency, language) : (language === 'en' ? 'your highest area' : 'مجالك الأعلى');
   
   const steps = [
     {
       timeframe: language === 'en' ? 'Immediate (Week 1)' : 'فوري (الأسبوع 1)',
       action: language === 'en'
-        ? `Reflect on your assessment results and identify one specific behavior to change in ${lowestCompetency?.name?.[language] || lowestCompetency?.name?.en || 'your lowest area'}.`
-        : `تأمل في نتائج تقييمك وحدد سلوكًا واحدًا محددًا للتغيير في ${lowestCompetency?.name?.[language] || lowestCompetency?.name?.ar || 'مجالك الأدنى'}.`
+        ? `Reflect on your assessment results and identify one specific behavior to change in ${lowestName}.`
+        : `تأمل في نتائج تقييمك وحدد سلوكًا واحدًا محددًا للتغيير في ${lowestName}.`
     },
     {
       timeframe: language === 'en' ? 'Short-term (Month 1)' : 'قصير المدى (الشهر 1)',
@@ -626,8 +687,8 @@ const generateActionableSteps = (competencies, language) => {
     {
       timeframe: language === 'en' ? 'Long-term (Quarter 2)' : 'طويل المدى (الربع 2)',
       action: language === 'en'
-        ? `Leverage your strength in ${highestCompetency?.name?.[language] || highestCompetency?.name?.en || 'your highest area'} to compensate for development areas and create greater impact.`
-        : `استفد من قوتك في ${highestCompetency?.name?.[language] || highestCompetency?.name?.ar || 'مجالك الأعلى'} لتعويض مجالات التطوير وخلق تأثير أكبر.`
+        ? `Leverage your strength in ${highestName} to compensate for development areas and create greater impact.`
+        : `استفد من قوتك في ${highestName} لتعويض مجالات التطوير وخلق تأثير أكبر.`
     }
   ];
 
@@ -636,10 +697,12 @@ const generateActionableSteps = (competencies, language) => {
 
 // Identify leadership style based on competencies (supports both Kafaat and 360)
 const identifyLeadershipStyle = (competencies, language) => {
+  if (!competencies || competencies.length === 0) return null;
+  
   const scores = {};
   competencies.forEach(c => {
     const key = competencyKeyMap[c.key] || c.key;
-    scores[key] = c.score;
+    scores[key] = c.score || 0;
   });
 
   // Detect assessment type based on available keys
@@ -722,15 +785,25 @@ const identifyLeadershipStyle = (competencies, language) => {
 
 // Create progress metrics for tracking
 const createProgressMetrics = (competencies, language) => {
+  if (!competencies || competencies.length === 0) {
+    return { currentOverall: 0, targetOverall: 0, competencyTargets: [], milestones: [] };
+  }
+  
+  const totalScore = competencies.reduce((sum, c) => sum + (c.score || 0), 0);
+  const avgScore = totalScore / competencies.length;
+  
   return {
-    currentOverall: Math.round(competencies.reduce((sum, c) => sum + c.score, 0) / competencies.length),
-    targetOverall: Math.min(Math.round(competencies.reduce((sum, c) => sum + c.score, 0) / competencies.length) + 15, 100),
-    competencyTargets: competencies.map(c => ({
-      name: c.name?.[language] || c.name?.en || c.key,
-      current: c.score,
-      target: Math.min(c.score + 15, 100),
-      gap: Math.max(0, Math.min(c.score + 15, 100) - c.score)
-    })),
+    currentOverall: Math.round(avgScore),
+    targetOverall: Math.min(Math.round(avgScore) + 15, 100),
+    competencyTargets: competencies.map(c => {
+      const score = c.score || 0;
+      return {
+        name: getItemDisplayName(c, language),
+        current: score,
+        target: Math.min(score + 15, 100),
+        gap: Math.max(0, Math.min(score + 15, 100) - score)
+      };
+    }),
     milestones: [
       {
         days: 30,
@@ -753,10 +826,24 @@ const createProgressMetrics = (competencies, language) => {
 
 // Generate executive summary
 export const generateExecutiveSummary = (overallScore, competencies, language) => {
+  if (!competencies || competencies.length === 0) {
+    return {
+      scoreInterpretation: language === 'en' ? 'Assessment data not available.' : 'بيانات التقييم غير متوفرة.',
+      leadershipProfile: null,
+      dominantStyle: null,
+      topStrengths: [],
+      priorityDevelopment: [],
+      keyRecommendation: ''
+    };
+  }
+  
   const profile = generateOverallProfile(competencies, language);
   const leadershipStyle = identifyLeadershipStyle(competencies, language);
-  const strengths = competencies.filter(c => c.score >= 70).slice(0, 3);
-  const development = competencies.filter(c => c.score < 70).slice(0, 3);
+  const strengths = competencies.filter(c => (c.score || 0) >= 70).slice(0, 3);
+  const development = competencies.filter(c => (c.score || 0) < 70).slice(0, 3);
+  
+  const topStrengthName = strengths[0] ? getItemDisplayName(strengths[0], language) : (language === 'en' ? 'your highest scoring area' : 'مجالك الأعلى درجة');
+  const topDevName = development[0] ? getItemDisplayName(development[0], language) : (language === 'en' ? 'your lowest scoring area' : 'مجالك الأدنى درجة');
 
   return {
     scoreInterpretation: language === 'en'
@@ -764,11 +851,11 @@ export const generateExecutiveSummary = (overallScore, competencies, language) =
       : `نتيجتك الإجمالية ${overallScore}% تضعك في فئة ${profile.type}.`,
     leadershipProfile: profile,
     dominantStyle: leadershipStyle,
-    topStrengths: strengths.map(s => s.name?.[language] || s.name?.en || s.key),
-    priorityDevelopment: development.map(d => d.name?.[language] || d.name?.en || d.key),
+    topStrengths: strengths.map(s => getItemDisplayName(s, language)),
+    priorityDevelopment: development.map(d => getItemDisplayName(d, language)),
     keyRecommendation: language === 'en'
-      ? `Focus your development efforts on ${development[0]?.name?.[language] || development[0]?.name?.en || 'your lowest scoring area'} while leveraging your strength in ${strengths[0]?.name?.[language] || strengths[0]?.name?.en || 'your highest scoring area'}.`
-      : `ركز جهودك التطويرية على ${development[0]?.name?.[language] || development[0]?.name?.ar || 'مجالك الأدنى درجة'} مع الاستفادة من قوتك في ${strengths[0]?.name?.[language] || strengths[0]?.name?.ar || 'مجالك الأعلى درجة'}.`
+      ? `Focus your development efforts on ${topDevName} while leveraging your strength in ${topStrengthName}.`
+      : `ركز جهودك التطويرية على ${topDevName} مع الاستفادة من قوتك في ${topStrengthName}.`
   };
 };
 
