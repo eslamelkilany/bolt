@@ -98,14 +98,23 @@ const AdminDashboard = () => {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <span className="w-12 h-12 bg-kafaat-gold rounded-xl flex items-center justify-center">👑</span>
-            {language === 'en' ? 'Admin Dashboard' : 'لوحة تحكم المسؤول'}
-          </h1>
-          <p className="text-gray-600 mt-2">
-            {language === 'en' ? 'Manage users, assessments, tokens, and reports' : 'إدارة المستخدمين والتقييمات والرموز والتقارير'}
-          </p>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+              <span className="w-12 h-12 bg-kafaat-gold rounded-xl flex items-center justify-center">👑</span>
+              {language === 'en' ? 'Admin Dashboard' : 'لوحة تحكم المسؤول'}
+            </h1>
+            <p className="text-gray-600 mt-2">
+              {language === 'en' ? 'Manage users, assessments, tokens, and reports' : 'إدارة المستخدمين والتقييمات والرموز والتقارير'}
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/admin/custom-assessments')}
+            className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2 shadow-lg"
+          >
+            <span>🎓</span>
+            {language === 'en' ? 'Custom Assessments' : 'التقييمات المخصصة'}
+          </button>
         </div>
 
         {/* Stats Cards */}

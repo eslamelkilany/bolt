@@ -11,6 +11,11 @@ import UserAssessment from './pages/UserAssessment';
 import ThankYouPage from './pages/ThankYouPage';
 import AdminReportView from './pages/AdminReportView';
 
+// Custom Assessment Pages
+import AdminCustomAssessments from './pages/AdminCustomAssessments';
+import CustomAssessment from './pages/CustomAssessment';
+import CustomThankYouPage from './pages/CustomThankYouPage';
+
 function App() {
   return (
     <LanguageProvider>
@@ -30,10 +35,17 @@ function App() {
           <Route path="/assessment/:type" element={<UserAssessment />} />
           <Route path="/thank-you/:type" element={<ThankYouPage />} />
           
+          {/* Custom Assessment Routes (User) */}
+          <Route path="/custom-assessment/:courseId/:testType" element={<CustomAssessment />} />
+          <Route path="/custom-thank-you/:courseId/:testType" element={<CustomThankYouPage />} />
+          
           {/* Admin Routes */}
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/report/:userId/:reportId" element={<AdminReportView />} />
           <Route path="/admin/user-reports/:userId" element={<AdminReportView />} />
+          
+          {/* Admin Custom Assessments */}
+          <Route path="/admin/custom-assessments" element={<AdminCustomAssessments />} />
           
           {/* Catch all - redirect to user login */}
           <Route path="*" element={<Navigate to="/login" replace />} />

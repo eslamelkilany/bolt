@@ -9,6 +9,7 @@ const UserDashboard = () => {
   const { language, isRTL } = useLanguage();
   const [user, setUser] = useState(null);
   const [remainingTokens, setRemainingTokens] = useState(0);
+  const [customCourses, setCustomCourses] = useState([]);
 
   // Function to load fresh user data
   const loadUserData = async () => {
@@ -17,6 +18,17 @@ const UserDashboard = () => {
       setUser(currentUser);
       const tokens = await auth.getRemainingTokens();
       setRemainingTokens(tokens);
+    }
+    
+    // Load custom courses
+    try {
+      const storedCourses = localStorage.getItem('kafaat-custom-courses');
+      if (storedCourses) {
+        const courses = JSON.parse(storedCourses);
+        setCustomCourses(courses.filter(c => c.status === 'active'));
+      }
+    } catch (error) {
+      console.error('Error loading custom courses:', error);
     }
   };
 
@@ -314,6 +326,135 @@ const UserDashboard = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Custom Training Assessments */}
+        {customCourses.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span>🎓</span>
+              {language === 'en' ? 'Training Course Assessments' : 'تقييمات الدورات التدريبية'}
+            </h2>
+            <div className="grid md:grid-cols-2 gap-6">
+              {customCourses.map((course) => {
+                // Check if user has completed pre-test and post-test
+                const preTestCompleted = user?.reports?.some(r => 
+                  r.assessmentType === 'custom' && 
+                  r.data?.courseId === course.id && 
+                  r.data?.testType === 'pre'
+                );
+                const postTestCompleted = user?.reports?.some(r => 
+                  r.assessmentType === 'custom' && 
+                  r.data?.courseId === course.id && 
+                  r.data?.testType === 'post'
+                );
+
+                return (
+                  <div key={course.id} className="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div className="h-2 bg-gradient-to-r from-purple-600 to-pink-500"></div>
+                    <div className="p-6">
+                      <div className="flex items-start gap-3 mb-4">
+                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                          <span className="text-2xl">🎓</span>
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-bold text-gray-900">
+                            {course.title?.[language] || course.title?.en}
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            {course.duration} • {course.modules?.length || 0} {language === 'en' ? 'modules' : 'وحدات'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="text-gray-600 text-sm mb-4">
+                        {course.description?.[language] || course.description?.en || (language === 'en' ? 'Training course assessment' : 'تقييم دورة تدريبية')}
+                      </p>
+
+                      {/* Test Progress */}
+                      <div className="space-y-3">
+                        {/* Pre-Test */}
+                        <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                              preTestCompleted ? 'bg-green-500 text-white' : 'bg-blue-100 text-blue-600'
+                            }`}>
+                              {preTestCompleted ? '✓' : '1'}
+                            </span>
+                            <span className="text-sm font-medium">
+                              {language === 'en' ? 'Pre-Test' : 'الاختبار القبلي'}
+                            </span>
+                          </div>
+                          {preTestCompleted ? (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                              {language === 'en' ? 'Completed' : 'مكتمل'}
+                            </span>
+                          ) : (
+                            <Link
+                              to={`/custom-assessment/${course.id}/pre`}
+                              className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                            >
+                              {language === 'en' ? 'Start' : 'ابدأ'}
+                            </Link>
+                          )}
+                        </div>
+
+                        {/* Training Indicator */}
+                        <div className="flex items-center justify-center">
+                          <div className="flex items-center gap-2 text-gray-400">
+                            <div className="w-8 border-t border-dashed border-gray-300"></div>
+                            <span className="text-xs">📚 {language === 'en' ? 'Complete Training' : 'أكمل التدريب'}</span>
+                            <div className="w-8 border-t border-dashed border-gray-300"></div>
+                          </div>
+                        </div>
+
+                        {/* Post-Test */}
+                        <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                              postTestCompleted ? 'bg-green-500 text-white' : 
+                              preTestCompleted ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-400'
+                            }`}>
+                              {postTestCompleted ? '✓' : '2'}
+                            </span>
+                            <span className="text-sm font-medium">
+                              {language === 'en' ? 'Post-Test' : 'الاختبار البعدي'}
+                            </span>
+                          </div>
+                          {postTestCompleted ? (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                              {language === 'en' ? 'Completed' : 'مكتمل'}
+                            </span>
+                          ) : preTestCompleted ? (
+                            <Link
+                              to={`/custom-assessment/${course.id}/post`}
+                              className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                            >
+                              {language === 'en' ? 'Start' : 'ابدأ'}
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-gray-400">
+                              {language === 'en' ? 'Complete pre-test first' : 'أكمل الاختبار القبلي أولاً'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* View Report Link (if post-test completed) */}
+                      {postTestCompleted && (
+                        <Link
+                          to={`/custom-thank-you/${course.id}/post`}
+                          className="mt-4 block w-full text-center py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-medium text-sm"
+                        >
+                          {language === 'en' ? 'View Report' : 'عرض التقرير'}
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
