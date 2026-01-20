@@ -1,45 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../utils/LanguageContext';
 import Header from '../components/Header';
 import * as auth from '../utils/auth';
-import { 
-  parseCoursePlan, 
-  generateQuestionsFromCourse, 
-  bloomsLevels, 
-  questionTypes 
-} from '../data/customAssessmentEngine';
+import { processUploadedCourse } from '../utils/courseAIAnalyzer';
+import { bloomsLevels, questionTypes } from '../data/customAssessmentEngine';
 
 const AdminCustomAssessments = () => {
   const navigate = useNavigate();
   const { language, isRTL } = useLanguage();
+  const fileInputRef = useRef(null);
+  
   const [activeTab, setActiveTab] = useState('courses');
   const [courses, setCourses] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [generatedQuestions, setGeneratedQuestions] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-
-  // Form state for new course
-  const [courseForm, setCourseForm] = useState({
-    title: { en: '', ar: '' },
-    description: { en: '', ar: '' },
-    duration: '1 day',
-    targetAudience: { en: '', ar: '' },
-    modules: []
-  });
-
-  const [moduleForm, setModuleForm] = useState({
-    title: { en: '', ar: '' },
-    duration: '1 hour',
-    objectives: [],
-    topics: []
-  });
-
-  const [objectiveInput, setObjectiveInput] = useState({ en: '', ar: '' });
-  const [topicInput, setTopicInput] = useState({ en: '', ar: '' });
+  
+  // Upload and AI processing states
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [processingStage, setProcessingStage] = useState('idle'); // idle, uploading, parsing, analyzing, generating, complete, error
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [processingError, setProcessingError] = useState(null);
 
   useEffect(() => {
     if (!auth.isLoggedIn() || !auth.isAdmin()) {
@@ -66,128 +51,165 @@ const AdminCustomAssessments = () => {
     setCourses(updatedCourses);
   };
 
-  const handleCreateCourse = () => {
-    if (!courseForm.title.en || !courseForm.title.ar) {
-      alert(language === 'en' ? 'Please enter course title in both languages' : 'يرجى إدخال عنوان الدورة بكلا اللغتين');
+  // File upload handler
+  const handleFileSelect = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain'
+    ];
+    const validExtensions = ['.pdf', '.docx', '.pptx', '.txt'];
+    
+    const isValidType = validTypes.includes(file.type) || 
+                        validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+
+    if (!isValidType) {
+      alert(language === 'en' 
+        ? 'Please upload a PDF, DOCX, PPTX, or TXT file.' 
+        : 'يرجى رفع ملف PDF أو DOCX أو PPTX أو TXT.');
       return;
     }
 
-    const newCourse = {
-      id: `course-${Date.now()}`,
-      ...courseForm,
-      createdAt: new Date().toISOString(),
-      status: 'draft',
-      assessments: []
-    };
-
-    saveCourses([...courses, newCourse]);
-    setCourseForm({
-      title: { en: '', ar: '' },
-      description: { en: '', ar: '' },
-      duration: '1 day',
-      targetAudience: { en: '', ar: '' },
-      modules: []
-    });
-    setShowCreateModal(false);
-  };
-
-  const handleAddModule = () => {
-    if (!moduleForm.title.en || !moduleForm.title.ar) {
-      alert(language === 'en' ? 'Please enter module title in both languages' : 'يرجى إدخال عنوان الوحدة بكلا اللغتين');
+    // Validate file size (max 20MB)
+    if (file.size > 20 * 1024 * 1024) {
+      alert(language === 'en' 
+        ? 'File size must be less than 20MB.' 
+        : 'يجب أن يكون حجم الملف أقل من 20 ميجابايت.');
       return;
     }
 
-    setCourseForm({
-      ...courseForm,
-      modules: [...courseForm.modules, { ...moduleForm, id: `module-${Date.now()}` }]
-    });
-    setModuleForm({
-      title: { en: '', ar: '' },
-      duration: '1 hour',
-      objectives: [],
-      topics: []
-    });
+    setUploadedFile(file);
+    setProcessingStage('idle');
+    setProcessingError(null);
+    setAnalysisResult(null);
   };
 
-  const handleAddObjective = () => {
-    if (!objectiveInput.en || !objectiveInput.ar) return;
-    setModuleForm({
-      ...moduleForm,
-      objectives: [...moduleForm.objectives, { ...objectiveInput }]
-    });
-    setObjectiveInput({ en: '', ar: '' });
-  };
+  // Process uploaded file with AI
+  const processFile = async () => {
+    if (!uploadedFile) return;
 
-  const handleAddTopic = () => {
-    if (!topicInput.en || !topicInput.ar) return;
-    setModuleForm({
-      ...moduleForm,
-      topics: [...moduleForm.topics, { ...topicInput }]
-    });
-    setTopicInput({ en: '', ar: '' });
-  };
-
-  const handleGenerateAssessment = async (course) => {
-    setGenerating(true);
-    setSelectedCourse(course);
+    setProcessingStage('uploading');
+    setProcessingProgress(10);
+    setProcessingError(null);
 
     try {
-      const parsedCourse = parseCoursePlan(course);
-      const questions = generateQuestionsFromCourse(parsedCourse, {
-        totalQuestions: 20,
-        preTestRatio: 0.5
+      // Simulate upload progress
+      setProcessingStage('parsing');
+      setProcessingProgress(30);
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setProcessingStage('analyzing');
+      setProcessingProgress(50);
+      
+      // Process the file with AI
+      const result = await processUploadedCourse(uploadedFile, {
+        minQuestions: 10,
+        maxQuestions: 20,
+        language
       });
 
-      setGeneratedQuestions(questions);
-      setShowPreviewModal(true);
-    } catch (error) {
-      console.error('Error generating assessment:', error);
-      alert(language === 'en' ? 'Error generating assessment' : 'خطأ في إنشاء التقييم');
-    }
+      setProcessingProgress(80);
+      setProcessingStage('generating');
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setProcessingProgress(100);
+      setProcessingStage('complete');
+      setAnalysisResult(result);
+      setGeneratedQuestions(result.questions);
 
-    setGenerating(false);
+    } catch (error) {
+      console.error('Processing error:', error);
+      setProcessingStage('error');
+      setProcessingError(error.message || (language === 'en' ? 'Error processing file' : 'خطأ في معالجة الملف'));
+    }
   };
 
+  // Save the generated course and assessment
   const handleSaveAssessment = () => {
-    if (!selectedCourse || !generatedQuestions) return;
+    if (!analysisResult) return;
 
-    const assessment = {
-      id: `assessment-${Date.now()}`,
-      courseId: selectedCourse.id,
-      questions: generatedQuestions,
-      createdAt: new Date().toISOString(),
-      status: 'active'
+    const courseWithAssessment = {
+      ...analysisResult.course,
+      status: 'active',
+      assessments: [{
+        id: `assessment-${Date.now()}`,
+        courseId: analysisResult.course.id,
+        questions: generatedQuestions,
+        createdAt: new Date().toISOString(),
+        status: 'active'
+      }]
     };
 
-    const updatedCourses = courses.map(c => {
-      if (c.id === selectedCourse.id) {
-        return {
-          ...c,
-          status: 'active',
-          assessments: [...(c.assessments || []), assessment]
-        };
-      }
-      return c;
-    });
-
-    saveCourses(updatedCourses);
-    setShowPreviewModal(false);
+    saveCourses([...courses, courseWithAssessment]);
+    
+    // Reset states
+    setShowUploadModal(false);
+    setUploadedFile(null);
+    setProcessingStage('idle');
+    setAnalysisResult(null);
     setGeneratedQuestions(null);
-    setSelectedCourse(null);
-    alert(language === 'en' ? 'Assessment saved successfully!' : 'تم حفظ التقييم بنجاح!');
+    
+    alert(language === 'en' 
+      ? 'Course and assessment saved successfully!' 
+      : 'تم حفظ الدورة والتقييم بنجاح!');
   };
 
   const handleDeleteCourse = (courseId) => {
-    if (window.confirm(language === 'en' ? 'Are you sure you want to delete this course?' : 'هل أنت متأكد من حذف هذه الدورة؟')) {
+    if (window.confirm(language === 'en' 
+      ? 'Are you sure you want to delete this course?' 
+      : 'هل أنت متأكد من حذف هذه الدورة؟')) {
       saveCourses(courses.filter(c => c.id !== courseId));
     }
+  };
+
+  const resetUploadModal = () => {
+    setShowUploadModal(false);
+    setUploadedFile(null);
+    setProcessingStage('idle');
+    setProcessingProgress(0);
+    setAnalysisResult(null);
+    setProcessingError(null);
+    setGeneratedQuestions(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Get file icon based on type
+  const getFileIcon = (fileName) => {
+    if (fileName?.endsWith('.pdf')) return '📕';
+    if (fileName?.endsWith('.docx')) return '📘';
+    if (fileName?.endsWith('.pptx')) return '📙';
+    if (fileName?.endsWith('.txt')) return '📄';
+    return '📁';
+  };
+
+  // Processing stage messages
+  const getProcessingMessage = () => {
+    const messages = {
+      idle: { en: 'Ready to process', ar: 'جاهز للمعالجة' },
+      uploading: { en: 'Uploading file...', ar: 'جاري رفع الملف...' },
+      parsing: { en: 'Parsing document content...', ar: 'جاري تحليل محتوى المستند...' },
+      analyzing: { en: 'AI is analyzing course content...', ar: 'الذكاء الاصطناعي يحلل محتوى الدورة...' },
+      generating: { en: 'Generating assessment questions...', ar: 'جاري إنشاء أسئلة التقييم...' },
+      complete: { en: 'Processing complete!', ar: 'اكتملت المعالجة!' },
+      error: { en: 'Error occurred', ar: 'حدث خطأ' }
+    };
+    return messages[processingStage]?.[language] || '';
   };
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-kafaat-navy border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">{language === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
         </div>
       </div>
@@ -215,17 +237,43 @@ const AdminCustomAssessments = () => {
             </h1>
             <p className="text-gray-600 mt-2">
               {language === 'en' 
-                ? 'Create AI-powered assessments from training course plans' 
-                : 'إنشاء تقييمات مدعومة بالذكاء الاصطناعي من خطط الدورات التدريبية'}
+                ? 'Upload training course files and let AI generate assessments automatically' 
+                : 'ارفع ملفات الدورات التدريبية ودع الذكاء الاصطناعي يُنشئ التقييمات تلقائياً'}
             </p>
           </div>
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="bg-kafaat-navy text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-800 flex items-center gap-2 shadow-lg"
+            onClick={() => setShowUploadModal(true)}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-lg font-medium hover:from-purple-700 hover:to-pink-700 flex items-center gap-2 shadow-lg"
           >
-            <span>+</span>
-            {language === 'en' ? 'Add Training Course' : 'إضافة دورة تدريبية'}
+            <span>🤖</span>
+            {language === 'en' ? 'Upload & Generate with AI' : 'رفع وإنشاء بالذكاء الاصطناعي'}
           </button>
+        </div>
+
+        {/* AI Feature Highlight */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-6 mb-8">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <span className="text-2xl">🧠</span>
+            </div>
+            <div>
+              <h3 className="font-bold text-purple-900 mb-2">
+                {language === 'en' ? 'AI-Powered Assessment Generation' : 'إنشاء التقييمات بالذكاء الاصطناعي'}
+              </h3>
+              <p className="text-purple-700 text-sm mb-3">
+                {language === 'en'
+                  ? 'Upload your training course file (PDF, DOCX, PPTX, or TXT) and our AI will automatically analyze the content, extract key concepts, and generate 10-20 intelligent pre and post-test questions.'
+                  : 'ارفع ملف الدورة التدريبية (PDF أو DOCX أو PPTX أو TXT) وسيقوم الذكاء الاصطناعي تلقائياً بتحليل المحتوى واستخراج المفاهيم الرئيسية وإنشاء 10-20 سؤال ذكي للاختبار القبلي والبعدي.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {['PDF', 'DOCX', 'PPTX', 'TXT'].map(format => (
+                  <span key={format} className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                    {format}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -247,8 +295,10 @@ const AdminCustomAssessments = () => {
             </p>
           </div>
           <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-amber-500">
-            <p className="text-gray-500 text-sm">{language === 'en' ? 'Completed Tests' : 'الاختبارات المكتملة'}</p>
-            <p className="text-3xl font-bold text-amber-600">0</p>
+            <p className="text-gray-500 text-sm">{language === 'en' ? 'AI Generated' : 'مُنشأ بالذكاء الاصطناعي'}</p>
+            <p className="text-3xl font-bold text-amber-600">
+              {courses.filter(c => c.sourceFile).length}
+            </p>
           </div>
         </div>
 
@@ -288,14 +338,15 @@ const AdminCustomAssessments = () => {
                   </h3>
                   <p className="text-gray-500 mb-6">
                     {language === 'en' 
-                      ? 'Add your first training course to generate AI-powered assessments' 
-                      : 'أضف أول دورة تدريبية لإنشاء تقييمات مدعومة بالذكاء الاصطناعي'}
+                      ? 'Upload your first training course file to generate AI-powered assessments' 
+                      : 'ارفع أول ملف دورة تدريبية لإنشاء تقييمات مدعومة بالذكاء الاصطناعي'}
                   </p>
                   <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700"
+                    onClick={() => setShowUploadModal(true)}
+                    className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 inline-flex items-center gap-2"
                   >
-                    {language === 'en' ? 'Add Training Course' : 'إضافة دورة تدريبية'}
+                    <span>🤖</span>
+                    {language === 'en' ? 'Upload Course File' : 'رفع ملف الدورة'}
                   </button>
                 </div>
               ) : (
@@ -303,15 +354,22 @@ const AdminCustomAssessments = () => {
                   {courses.map(course => (
                     <div key={course.id} className="bg-gray-50 rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-shadow">
                       <div className="flex justify-between items-start mb-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          course.status === 'active' 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-yellow-100 text-yellow-700'
-                        }`}>
-                          {course.status === 'active' 
-                            ? (language === 'en' ? 'Active' : 'نشط')
-                            : (language === 'en' ? 'Draft' : 'مسودة')}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            course.status === 'active' 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {course.status === 'active' 
+                              ? (language === 'en' ? 'Active' : 'نشط')
+                              : (language === 'en' ? 'Draft' : 'مسودة')}
+                          </span>
+                          {course.sourceFile && (
+                            <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+                              🤖 AI
+                            </span>
+                          )}
+                        </div>
                         <button
                           onClick={() => handleDeleteCourse(course.id)}
                           className="text-red-500 hover:text-red-700"
@@ -321,12 +379,37 @@ const AdminCustomAssessments = () => {
                       </div>
                       
                       <h3 className="text-lg font-bold text-gray-900 mb-2">
-                        {course.title[language] || course.title.en}
+                        {course.title?.[language] || course.title?.en}
                       </h3>
                       <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-                        {course.description[language] || course.description.en || 
+                        {course.description?.[language] || course.description?.en || 
                           (language === 'en' ? 'No description' : 'لا يوجد وصف')}
                       </p>
+
+                      {/* Source file info */}
+                      {course.sourceFile && (
+                        <div className="bg-white rounded-lg p-3 mb-4 flex items-center gap-2 text-sm">
+                          <span>{getFileIcon(course.sourceFile.name)}</span>
+                          <span className="text-gray-600 truncate flex-1">{course.sourceFile.name}</span>
+                        </div>
+                      )}
+
+                      {/* Analysis info */}
+                      {course.analysis && (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">
+                            {course.analysis.wordCount} {language === 'en' ? 'words' : 'كلمة'}
+                          </span>
+                          <span className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded">
+                            {course.analysis.difficulty === 'beginner' ? (language === 'en' ? 'Beginner' : 'مبتدئ') :
+                             course.analysis.difficulty === 'intermediate' ? (language === 'en' ? 'Intermediate' : 'متوسط') :
+                             (language === 'en' ? 'Advanced' : 'متقدم')}
+                          </span>
+                          <span className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded">
+                            {course.analysis.conceptsExtracted} {language === 'en' ? 'concepts' : 'مفهوم'}
+                          </span>
+                        </div>
+                      )}
 
                       <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
                         <span className="flex items-center gap-1">
@@ -337,30 +420,31 @@ const AdminCustomAssessments = () => {
                         </span>
                       </div>
 
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleGenerateAssessment(course)}
-                          disabled={generating}
-                          className="flex-1 bg-purple-600 text-white py-2 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                          {generating ? (
-                            <span className="animate-spin">⚙️</span>
-                          ) : (
-                            <span>🤖</span>
-                          )}
-                          {language === 'en' ? 'Generate' : 'إنشاء'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedCourse(course);
-                            setCourseForm(course);
-                            setShowCreateModal(true);
-                          }}
-                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
-                        >
-                          ✏️
-                        </button>
-                      </div>
+                      {/* Questions count */}
+                      {course.assessments?.[0]?.questions && (
+                        <div className="bg-purple-50 rounded-lg p-3 mb-4">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-purple-700">
+                              {language === 'en' ? 'Pre-test:' : 'قبلي:'} {course.assessments[0].questions.preTest?.length || 0}
+                            </span>
+                            <span className="text-purple-700">
+                              {language === 'en' ? 'Post-test:' : 'بعدي:'} {course.assessments[0].questions.postTest?.length || 0}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          setSelectedCourse(course);
+                          setGeneratedQuestions(course.assessments?.[0]?.questions);
+                          setShowPreviewModal(true);
+                        }}
+                        className="w-full bg-purple-600 text-white py-2 rounded-lg font-medium hover:bg-purple-700 flex items-center justify-center gap-2"
+                      >
+                        <span>👁️</span>
+                        {language === 'en' ? 'View Assessment' : 'عرض التقييم'}
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -379,17 +463,31 @@ const AdminCustomAssessments = () => {
                   </h3>
                   <p className="text-gray-500">
                     {language === 'en' 
-                      ? 'Generate assessments from your training courses' 
-                      : 'أنشئ تقييمات من دوراتك التدريبية'}
+                      ? 'Upload a training course to generate assessments' 
+                      : 'ارفع دورة تدريبية لإنشاء تقييمات'}
                   </p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {courses.filter(c => c.assessments?.length > 0).map(course => (
                     <div key={course.id} className="border border-gray-200 rounded-xl p-6">
-                      <h3 className="text-lg font-bold text-gray-900 mb-4">
-                        {course.title[language] || course.title.en}
-                      </h3>
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-gray-900">
+                            {course.title?.[language] || course.title?.en}
+                          </h3>
+                          {course.sourceFile && (
+                            <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                              {getFileIcon(course.sourceFile.name)} {course.sourceFile.name}
+                            </p>
+                          )}
+                        </div>
+                        {course.analysis && (
+                          <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+                            🤖 {language === 'en' ? 'AI Generated' : 'مُنشأ بالذكاء الاصطناعي'}
+                          </span>
+                        )}
+                      </div>
                       <div className="space-y-3">
                         {course.assessments.map(assessment => (
                           <div key={assessment.id} className="bg-gray-50 rounded-lg p-4 flex justify-between items-center">
@@ -398,28 +496,24 @@ const AdminCustomAssessments = () => {
                                 {language === 'en' ? 'Assessment' : 'تقييم'} #{assessment.id.split('-')[1]}
                               </p>
                               <p className="text-sm text-gray-500">
-                                {language === 'en' ? 'Pre-test:' : 'اختبار قبلي:'} {assessment.questions?.preTest?.length || 0} {language === 'en' ? 'questions' : 'أسئلة'} | 
-                                {language === 'en' ? ' Post-test:' : ' اختبار بعدي:'} {assessment.questions?.postTest?.length || 0} {language === 'en' ? 'questions' : 'أسئلة'}
+                                {language === 'en' ? 'Pre-test:' : 'اختبار قبلي:'} {assessment.questions?.preTest?.length || 0} | 
+                                {language === 'en' ? ' Post-test:' : ' اختبار بعدي:'} {assessment.questions?.postTest?.length || 0} |
+                                {language === 'en' ? ' Total:' : ' إجمالي:'} {assessment.questions?.all?.length || 0}
                               </p>
                               <p className="text-xs text-gray-400 mt-1">
                                 {language === 'en' ? 'Created:' : 'تم الإنشاء:'} {new Date(assessment.createdAt).toLocaleDateString()}
                               </p>
                             </div>
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => {
-                                  setSelectedCourse(course);
-                                  setGeneratedQuestions(assessment.questions);
-                                  setShowPreviewModal(true);
-                                }}
-                                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
-                              >
-                                {language === 'en' ? 'Preview' : 'معاينة'}
-                              </button>
-                              <button className="px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200">
-                                {language === 'en' ? 'Assign' : 'تعيين'}
-                              </button>
-                            </div>
+                            <button 
+                              onClick={() => {
+                                setSelectedCourse(course);
+                                setGeneratedQuestions(assessment.questions);
+                                setShowPreviewModal(true);
+                              }}
+                              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
+                            >
+                              {language === 'en' ? 'Preview' : 'معاينة'}
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -449,305 +543,267 @@ const AdminCustomAssessments = () => {
         </div>
       </div>
 
-      {/* Create Course Modal */}
-      {showCreateModal && (
+      {/* Upload Modal */}
+      {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white z-10">
-              <h2 className="text-xl font-bold text-gray-900">
-                {selectedCourse 
-                  ? (language === 'en' ? 'Edit Training Course' : 'تعديل الدورة التدريبية')
-                  : (language === 'en' ? 'Add Training Course' : 'إضافة دورة تدريبية')}
-              </h2>
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🤖</span>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {language === 'en' ? 'AI Course Analyzer' : 'محلل الدورات بالذكاء الاصطناعي'}
+                  </h2>
+                  <p className="text-sm text-gray-500">
+                    {language === 'en' ? 'Upload your training course file' : 'ارفع ملف الدورة التدريبية'}
+                  </p>
+                </div>
+              </div>
               <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setSelectedCourse(null);
-                  setCourseForm({
-                    title: { en: '', ar: '' },
-                    description: { en: '', ar: '' },
-                    duration: '1 day',
-                    targetAudience: { en: '', ar: '' },
-                    modules: []
-                  });
-                }}
+                onClick={resetUploadModal}
                 className="text-gray-500 hover:text-gray-700 text-2xl"
               >
                 ×
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
-              {/* Basic Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {language === 'en' ? 'Course Title (English)' : 'عنوان الدورة (إنجليزي)'} *
-                  </label>
+            <div className="p-6">
+              {/* File Upload Area */}
+              {processingStage === 'idle' && !uploadedFile && (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-purple-300 rounded-xl p-12 text-center cursor-pointer hover:border-purple-500 hover:bg-purple-50 transition-all"
+                >
                   <input
-                    type="text"
-                    value={courseForm.title.en}
-                    onChange={(e) => setCourseForm({ ...courseForm, title: { ...courseForm.title, en: e.target.value } })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    placeholder="e.g., Leadership Excellence Program"
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.pptx,.txt"
+                    onChange={handleFileSelect}
+                    className="hidden"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {language === 'en' ? 'Course Title (Arabic)' : 'عنوان الدورة (عربي)'} *
-                  </label>
-                  <input
-                    type="text"
-                    value={courseForm.title.ar}
-                    onChange={(e) => setCourseForm({ ...courseForm, title: { ...courseForm.title, ar: e.target.value } })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    placeholder="مثال: برنامج التميز القيادي"
-                    dir="rtl"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {language === 'en' ? 'Description (English)' : 'الوصف (إنجليزي)'}
-                  </label>
-                  <textarea
-                    value={courseForm.description.en}
-                    onChange={(e) => setCourseForm({ ...courseForm, description: { ...courseForm.description, en: e.target.value } })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="Course description..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {language === 'en' ? 'Description (Arabic)' : 'الوصف (عربي)'}
-                  </label>
-                  <textarea
-                    value={courseForm.description.ar}
-                    onChange={(e) => setCourseForm({ ...courseForm, description: { ...courseForm.description, ar: e.target.value } })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="وصف الدورة..."
-                    dir="rtl"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {language === 'en' ? 'Duration' : 'المدة'}
-                  </label>
-                  <select
-                    value={courseForm.duration}
-                    onChange={(e) => setCourseForm({ ...courseForm, duration: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  >
-                    <option value="half day">{language === 'en' ? 'Half Day' : 'نصف يوم'}</option>
-                    <option value="1 day">{language === 'en' ? '1 Day' : 'يوم واحد'}</option>
-                    <option value="2 days">{language === 'en' ? '2 Days' : 'يومان'}</option>
-                    <option value="3 days">{language === 'en' ? '3 Days' : '3 أيام'}</option>
-                    <option value="1 week">{language === 'en' ? '1 Week' : 'أسبوع'}</option>
-                    <option value="2 weeks">{language === 'en' ? '2 Weeks' : 'أسبوعان'}</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {language === 'en' ? 'Target Audience (English)' : 'الفئة المستهدفة (إنجليزي)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={courseForm.targetAudience.en}
-                    onChange={(e) => setCourseForm({ ...courseForm, targetAudience: { ...courseForm.targetAudience, en: e.target.value } })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    placeholder="e.g., Mid-level managers"
-                  />
-                </div>
-              </div>
-
-              {/* Modules Section */}
-              <div className="border-t border-gray-200 pt-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <span>📦</span>
-                  {language === 'en' ? 'Course Modules' : 'وحدات الدورة'}
-                </h3>
-
-                {/* Added Modules */}
-                {courseForm.modules.length > 0 && (
-                  <div className="space-y-3 mb-6">
-                    {courseForm.modules.map((module, idx) => (
-                      <div key={module.id || idx} className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h4 className="font-medium text-purple-900">{module.title[language] || module.title.en}</h4>
-                            <p className="text-sm text-purple-600">
-                              {module.objectives?.length || 0} {language === 'en' ? 'objectives' : 'أهداف'} | 
-                              {module.topics?.length || 0} {language === 'en' ? 'topics' : 'مواضيع'}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => setCourseForm({
-                              ...courseForm,
-                              modules: courseForm.modules.filter((_, i) => i !== idx)
-                            })}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
+                  <span className="text-5xl block mb-4">📁</span>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    {language === 'en' ? 'Drop your file here or click to browse' : 'أسقط ملفك هنا أو انقر للتصفح'}
+                  </h3>
+                  <p className="text-gray-500 text-sm mb-4">
+                    {language === 'en' 
+                      ? 'Supported formats: PDF, DOCX, PPTX, TXT (max 20MB)' 
+                      : 'الصيغ المدعومة: PDF, DOCX, PPTX, TXT (حد أقصى 20 ميجابايت)'}
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    {['📕 PDF', '📘 DOCX', '📙 PPTX', '📄 TXT'].map(format => (
+                      <span key={format} className="px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-600">
+                        {format}
+                      </span>
                     ))}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Add Module Form */}
-                <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input
-                      type="text"
-                      value={moduleForm.title.en}
-                      onChange={(e) => setModuleForm({ ...moduleForm, title: { ...moduleForm.title, en: e.target.value } })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      placeholder={language === 'en' ? 'Module Title (English)' : 'عنوان الوحدة (إنجليزي)'}
-                    />
-                    <input
-                      type="text"
-                      value={moduleForm.title.ar}
-                      onChange={(e) => setModuleForm({ ...moduleForm, title: { ...moduleForm.title, ar: e.target.value } })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      placeholder={language === 'en' ? 'Module Title (Arabic)' : 'عنوان الوحدة (عربي)'}
-                      dir="rtl"
-                    />
+              {/* File Selected - Ready to Process */}
+              {uploadedFile && processingStage === 'idle' && (
+                <div className="space-y-6">
+                  <div className="bg-purple-50 rounded-xl p-6 flex items-center gap-4">
+                    <span className="text-4xl">{getFileIcon(uploadedFile.name)}</span>
+                    <div className="flex-1">
+                      <h4 className="font-medium text-gray-900">{uploadedFile.name}</h4>
+                      <p className="text-sm text-gray-500">
+                        {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setUploadedFile(null);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      ✕
+                    </button>
                   </div>
 
-                  {/* Objectives */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {language === 'en' ? 'Learning Objectives' : 'أهداف التعلم'}
-                    </label>
-                    {moduleForm.objectives.length > 0 && (
-                      <div className="space-y-2 mb-2">
-                        {moduleForm.objectives.map((obj, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-sm bg-white p-2 rounded border">
-                            <span className="text-green-500">✓</span>
-                            <span className="flex-1">{obj[language] || obj.en}</span>
-                            <button
-                              onClick={() => setModuleForm({
-                                ...moduleForm,
-                                objectives: moduleForm.objectives.filter((_, i) => i !== idx)
-                              })}
-                              className="text-red-500"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={objectiveInput.en}
-                        onChange={(e) => setObjectiveInput({ ...objectiveInput, en: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder={language === 'en' ? 'Objective (EN) - e.g., Demonstrate leadership skills' : 'الهدف (EN)'}
-                      />
-                      <input
-                        type="text"
-                        value={objectiveInput.ar}
-                        onChange={(e) => setObjectiveInput({ ...objectiveInput, ar: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder={language === 'en' ? 'Objective (AR)' : 'الهدف (عربي)'}
-                        dir="rtl"
-                      />
-                      <button
-                        onClick={handleAddObjective}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Topics */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {language === 'en' ? 'Topics' : 'المواضيع'}
-                    </label>
-                    {moduleForm.topics.length > 0 && (
-                      <div className="space-y-2 mb-2">
-                        {moduleForm.topics.map((topic, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-sm bg-white p-2 rounded border">
-                            <span className="text-blue-500">•</span>
-                            <span className="flex-1">{topic[language] || topic.en}</span>
-                            <button
-                              onClick={() => setModuleForm({
-                                ...moduleForm,
-                                topics: moduleForm.topics.filter((_, i) => i !== idx)
-                              })}
-                              className="text-red-500"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={topicInput.en}
-                        onChange={(e) => setTopicInput({ ...topicInput, en: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder={language === 'en' ? 'Topic (EN)' : 'الموضوع (EN)'}
-                      />
-                      <input
-                        type="text"
-                        value={topicInput.ar}
-                        onChange={(e) => setTopicInput({ ...topicInput, ar: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder={language === 'en' ? 'Topic (AR)' : 'الموضوع (عربي)'}
-                        dir="rtl"
-                      />
-                      <button
-                        onClick={handleAddTopic}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                      >
-                        +
-                      </button>
-                    </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="font-medium text-blue-800 mb-2 flex items-center gap-2">
+                      <span>🧠</span>
+                      {language === 'en' ? 'AI will automatically:' : 'الذكاء الاصطناعي سيقوم تلقائياً بـ:'}
+                    </h4>
+                    <ul className="text-sm text-blue-700 space-y-1">
+                      <li>• {language === 'en' ? 'Extract course title, description, and objectives' : 'استخراج عنوان الدورة والوصف والأهداف'}</li>
+                      <li>• {language === 'en' ? 'Identify key concepts and learning points' : 'تحديد المفاهيم الرئيسية ونقاط التعلم'}</li>
+                      <li>• {language === 'en' ? 'Generate 10-20 questions based on content complexity' : 'إنشاء 10-20 سؤال بناءً على تعقيد المحتوى'}</li>
+                      <li>• {language === 'en' ? 'Create pre-test and post-test question sets' : 'إنشاء مجموعات أسئلة الاختبار القبلي والبعدي'}</li>
+                    </ul>
                   </div>
 
                   <button
-                    onClick={handleAddModule}
-                    className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
+                    onClick={processFile}
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-4 rounded-xl font-medium hover:from-purple-700 hover:to-pink-700 flex items-center justify-center gap-2 text-lg"
                   >
-                    {language === 'en' ? 'Add Module' : 'إضافة وحدة'}
+                    <span>🚀</span>
+                    {language === 'en' ? 'Analyze & Generate Assessment' : 'تحليل وإنشاء التقييم'}
                   </button>
                 </div>
-              </div>
-            </div>
+              )}
 
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-4 sticky bottom-0 bg-white">
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setSelectedCourse(null);
-                }}
-                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
-              >
-                {language === 'en' ? 'Cancel' : 'إلغاء'}
-              </button>
-              <button
-                onClick={handleCreateCourse}
-                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
-              >
-                {selectedCourse 
-                  ? (language === 'en' ? 'Update Course' : 'تحديث الدورة')
-                  : (language === 'en' ? 'Create Course' : 'إنشاء الدورة')}
-              </button>
+              {/* Processing Progress */}
+              {['uploading', 'parsing', 'analyzing', 'generating'].includes(processingStage) && (
+                <div className="space-y-6">
+                  <div className="text-center py-8">
+                    <div className="w-20 h-20 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+                    <h3 className="text-xl font-medium text-gray-900 mb-2">{getProcessingMessage()}</h3>
+                    <p className="text-gray-500 text-sm">
+                      {language === 'en' ? 'Please wait while AI processes your file...' : 'يرجى الانتظار بينما يعالج الذكاء الاصطناعي ملفك...'}
+                    </p>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 h-full transition-all duration-500"
+                      style={{ width: `${processingProgress}%` }}
+                    />
+                  </div>
+
+                  {/* Progress Steps */}
+                  <div className="flex justify-between text-sm">
+                    {[
+                      { stage: 'uploading', en: 'Upload', ar: 'رفع' },
+                      { stage: 'parsing', en: 'Parse', ar: 'تحليل' },
+                      { stage: 'analyzing', en: 'Analyze', ar: 'فحص' },
+                      { stage: 'generating', en: 'Generate', ar: 'إنشاء' }
+                    ].map((step, idx) => (
+                      <div key={step.stage} className="flex flex-col items-center">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
+                          processingProgress >= (idx + 1) * 25
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-200 text-gray-500'
+                        }`}>
+                          {processingProgress >= (idx + 1) * 25 ? '✓' : idx + 1}
+                        </div>
+                        <span className="text-gray-600">{step[language]}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Error State */}
+              {processingStage === 'error' && (
+                <div className="text-center py-8">
+                  <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-4xl">❌</span>
+                  </div>
+                  <h3 className="text-xl font-medium text-red-800 mb-2">
+                    {language === 'en' ? 'Processing Error' : 'خطأ في المعالجة'}
+                  </h3>
+                  <p className="text-red-600 mb-6">{processingError}</p>
+                  <button
+                    onClick={() => {
+                      setProcessingStage('idle');
+                      setProcessingError(null);
+                    }}
+                    className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                  >
+                    {language === 'en' ? 'Try Again' : 'حاول مرة أخرى'}
+                  </button>
+                </div>
+              )}
+
+              {/* Success - Analysis Results */}
+              {processingStage === 'complete' && analysisResult && (
+                <div className="space-y-6">
+                  <div className="text-center py-4">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <span className="text-3xl">✓</span>
+                    </div>
+                    <h3 className="text-xl font-medium text-gray-900">
+                      {language === 'en' ? 'Analysis Complete!' : 'اكتمل التحليل!'}
+                    </h3>
+                  </div>
+
+                  {/* Extracted Course Info */}
+                  <div className="bg-gray-50 rounded-xl p-6 space-y-4">
+                    <h4 className="font-bold text-gray-900 flex items-center gap-2">
+                      <span>📚</span>
+                      {language === 'en' ? 'Extracted Course Information' : 'معلومات الدورة المستخرجة'}
+                    </h4>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-500">{language === 'en' ? 'Title' : 'العنوان'}</p>
+                        <p className="font-medium">{analysisResult.course.title?.en || analysisResult.course.title}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500">{language === 'en' ? 'Duration' : 'المدة'}</p>
+                        <p className="font-medium">{analysisResult.course.duration}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500">{language === 'en' ? 'Difficulty' : 'المستوى'}</p>
+                        <p className="font-medium capitalize">{analysisResult.analysis.difficulty}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500">{language === 'en' ? 'Content Type' : 'نوع المحتوى'}</p>
+                        <p className="font-medium capitalize">{analysisResult.analysis.contentType}</p>
+                      </div>
+                    </div>
+
+                    {/* Key Topics */}
+                    {analysisResult.analysis.keyTopics?.length > 0 && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-2">{language === 'en' ? 'Key Topics Identified' : 'المواضيع الرئيسية المحددة'}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {analysisResult.analysis.keyTopics.slice(0, 6).map((topic, idx) => (
+                            <span key={idx} className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+                              {topic.substring(0, 30)}{topic.length > 30 ? '...' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Generated Questions Summary */}
+                  <div className="bg-green-50 rounded-xl p-6">
+                    <h4 className="font-bold text-green-800 flex items-center gap-2 mb-4">
+                      <span>📝</span>
+                      {language === 'en' ? 'Generated Assessment' : 'التقييم المُنشأ'}
+                    </h4>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div className="bg-white rounded-lg p-4">
+                        <p className="text-2xl font-bold text-blue-600">{generatedQuestions?.preTest?.length || 0}</p>
+                        <p className="text-sm text-gray-600">{language === 'en' ? 'Pre-Test' : 'اختبار قبلي'}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4">
+                        <p className="text-2xl font-bold text-green-600">{generatedQuestions?.postTest?.length || 0}</p>
+                        <p className="text-sm text-gray-600">{language === 'en' ? 'Post-Test' : 'اختبار بعدي'}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4">
+                        <p className="text-2xl font-bold text-purple-600">{generatedQuestions?.all?.length || 0}</p>
+                        <p className="text-sm text-gray-600">{language === 'en' ? 'Total' : 'إجمالي'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => {
+                        setSelectedCourse(analysisResult.course);
+                        setShowPreviewModal(true);
+                      }}
+                      className="flex-1 py-3 border border-purple-600 text-purple-600 rounded-lg font-medium hover:bg-purple-50"
+                    >
+                      {language === 'en' ? 'Preview Questions' : 'معاينة الأسئلة'}
+                    </button>
+                    <button
+                      onClick={handleSaveAssessment}
+                      className="flex-1 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+                    >
+                      {language === 'en' ? 'Save & Activate' : 'حفظ وتفعيل'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -760,7 +816,7 @@ const AdminCustomAssessments = () => {
             <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white z-10">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">
-                  {language === 'en' ? 'Generated Assessment Preview' : 'معاينة التقييم المُنشأ'}
+                  {language === 'en' ? 'Assessment Preview' : 'معاينة التقييم'}
                 </h2>
                 <p className="text-sm text-gray-500">
                   {selectedCourse?.title?.[language] || selectedCourse?.title?.en}
@@ -769,7 +825,7 @@ const AdminCustomAssessments = () => {
               <button
                 onClick={() => {
                   setShowPreviewModal(false);
-                  setGeneratedQuestions(null);
+                  setSelectedCourse(null);
                 }}
                 className="text-gray-500 hover:text-gray-700 text-2xl"
               >
@@ -782,19 +838,19 @@ const AdminCustomAssessments = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-blue-50 rounded-lg p-4 text-center">
                   <p className="text-2xl font-bold text-blue-600">{generatedQuestions.preTest?.length || 0}</p>
-                  <p className="text-sm text-blue-700">{language === 'en' ? 'Pre-Test Questions' : 'أسئلة الاختبار القبلي'}</p>
+                  <p className="text-sm text-blue-700">{language === 'en' ? 'Pre-Test' : 'اختبار قبلي'}</p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-4 text-center">
                   <p className="text-2xl font-bold text-green-600">{generatedQuestions.postTest?.length || 0}</p>
-                  <p className="text-sm text-green-700">{language === 'en' ? 'Post-Test Questions' : 'أسئلة الاختبار البعدي'}</p>
+                  <p className="text-sm text-green-700">{language === 'en' ? 'Post-Test' : 'اختبار بعدي'}</p>
                 </div>
                 <div className="bg-purple-50 rounded-lg p-4 text-center">
                   <p className="text-2xl font-bold text-purple-600">{generatedQuestions.all?.length || 0}</p>
-                  <p className="text-sm text-purple-700">{language === 'en' ? 'Total Questions' : 'إجمالي الأسئلة'}</p>
+                  <p className="text-sm text-purple-700">{language === 'en' ? 'Total' : 'إجمالي'}</p>
                 </div>
                 <div className="bg-amber-50 rounded-lg p-4 text-center">
                   <p className="text-2xl font-bold text-amber-600">
-                    {Object.keys(questionTypes).length}
+                    {new Set(generatedQuestions.all?.map(q => q.type) || []).size}
                   </p>
                   <p className="text-sm text-amber-700">{language === 'en' ? 'Question Types' : 'أنواع الأسئلة'}</p>
                 </div>
@@ -822,24 +878,19 @@ const AdminCustomAssessments = () => {
                               {bloomsLevels[q.bloomLevel]?.[language] || q.bloomLevel}
                             </span>
                             <span className="text-xs text-gray-500">
-                              {q.points} {language === 'en' ? 'points' : 'نقاط'}
+                              {q.points} {language === 'en' ? 'pts' : 'نقاط'}
                             </span>
                           </div>
                           <p className="text-gray-900">{q.question?.[language] || q.question?.en}</p>
-                          {q.scenario && (
-                            <p className="text-sm text-gray-600 mt-2 italic">
-                              {q.scenario?.[language] || q.scenario?.en}
-                            </p>
-                          )}
                           {q.options && (
                             <div className="mt-3 space-y-2">
-                              {q.options.map(opt => (
+                              {q.options.slice(0, 4).map(opt => (
                                 <div key={opt.id} className={`flex items-center gap-2 text-sm p-2 rounded ${
                                   opt.isCorrect ? 'bg-green-100 text-green-700' : 'bg-white'
                                 }`}>
                                   <span className="font-medium">{opt.id.toUpperCase()}.</span>
-                                  <span>{opt.text?.[language] || opt.text?.en}</span>
-                                  {opt.isCorrect && <span className="text-green-600">✓</span>}
+                                  <span className="truncate">{(opt.text?.[language] || opt.text?.en || '').substring(0, 80)}</span>
+                                  {opt.isCorrect && <span className="text-green-600 ml-auto">✓</span>}
                                 </div>
                               ))}
                             </div>
@@ -848,7 +899,7 @@ const AdminCustomAssessments = () => {
                       </div>
                     </div>
                   ))}
-                  {generatedQuestions.preTest?.length > 5 && (
+                  {(generatedQuestions.preTest?.length || 0) > 5 && (
                     <p className="text-center text-gray-500 text-sm">
                       +{generatedQuestions.preTest.length - 5} {language === 'en' ? 'more questions' : 'أسئلة أخرى'}
                     </p>
@@ -883,7 +934,7 @@ const AdminCustomAssessments = () => {
                       </div>
                     </div>
                   ))}
-                  {generatedQuestions.postTest?.length > 3 && (
+                  {(generatedQuestions.postTest?.length || 0) > 3 && (
                     <p className="text-center text-gray-500 text-sm">
                       +{generatedQuestions.postTest.length - 3} {language === 'en' ? 'more questions' : 'أسئلة أخرى'}
                     </p>
@@ -896,18 +947,11 @@ const AdminCustomAssessments = () => {
               <button
                 onClick={() => {
                   setShowPreviewModal(false);
-                  setGeneratedQuestions(null);
+                  setSelectedCourse(null);
                 }}
                 className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
               >
                 {language === 'en' ? 'Close' : 'إغلاق'}
-              </button>
-              <button
-                onClick={handleSaveAssessment}
-                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2"
-              >
-                <span>💾</span>
-                {language === 'en' ? 'Save Assessment' : 'حفظ التقييم'}
               </button>
             </div>
           </div>
