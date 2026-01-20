@@ -2,9 +2,10 @@
 // Extracts content from uploaded files and generates intelligent assessments
 
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-// Initialize PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Initialize PDF.js worker using the bundled worker (works with Vite)
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 // ==================== FILE PARSING ====================
 
