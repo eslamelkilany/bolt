@@ -4,7 +4,9 @@ import { useLanguage } from '../utils/LanguageContext';
 import Header from '../components/Header';
 import * as auth from '../utils/auth';
 import { processUploadedCourse, generateIntelligentQuestions } from '../utils/courseAIAnalyzer';
+import { generateQuestionsForModule } from '../utils/hybridQuestionGenerator';
 import ModuleBoundaryEditor from '../components/ModuleBoundaryEditor';
+import QuestionReviewModal from '../components/QuestionReviewModal';
 import { bloomsLevels, questionTypes } from '../data/customAssessmentEngine';
 
 const AdminCustomAssessments = () => {
@@ -27,6 +29,11 @@ const AdminCustomAssessments = () => {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [processingError, setProcessingError] = useState(null);
   const [showModuleEditor, setShowModuleEditor] = useState(false);
+  // Phase 4 — review state
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [moduleResults, setModuleResults] = useState([]); // [{moduleId, moduleTitle, source, reason, questions}]
+  const [regeneratingModuleIds, setRegeneratingModuleIds] = useState({});
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     if (!auth.isLoggedIn() || !auth.isAdmin()) {
@@ -135,52 +142,159 @@ const AdminCustomAssessments = () => {
     }
   };
 
-  // Admin confirmed (possibly edited) modules. Regenerate questions
-  // against the approved module list so downstream flow sees only
-  // content the admin signed off on.
-  const handleModulesConfirmed = (approvedModules) => {
+  // Admin confirmed (possibly edited) modules. Run the grounded hybrid
+  // generator once per approved module, collect per-module results, and
+  // open the review modal so the admin inspects every citation before
+  // publishing. Sequential on purpose — easier progress messaging and
+  // kinder to whatever rate limits are in play.
+  const handleModulesConfirmed = async (approvedModules) => {
     if (!analysisResult) return;
 
     setShowModuleEditor(false);
     setProcessingStage('generating');
-    setProcessingProgress(85);
+    setProcessingProgress(70);
 
+    const updatedCourse = { ...analysisResult.course, modules: approvedModules };
+    const results = [];
     try {
-      const updatedAnalysis = {
-        ...analysisResult.analysis,
-        modules: approvedModules
-      };
-      const updatedQuestions = generateIntelligentQuestions(updatedAnalysis, {
-        minQuestions: 10,
-        maxQuestions: 20,
-        language
-      });
+      for (let i = 0; i < approvedModules.length; i++) {
+        const m = approvedModules[i];
+        setProcessingProgress(70 + Math.round(((i + 1) / approvedModules.length) * 25));
+        const res = await generateQuestionsForModule({
+          course: updatedCourse,
+          module: m,
+          count: 5,
+          language
+        });
+        results.push({
+          moduleId: m.id,
+          moduleTitle: m.title?.[language] || m.title?.en || `Module ${i + 1}`,
+          source: res.source,
+          reason: res.reason,
+          // Tag each question with its owning module + source for later filtering.
+          questions: (res.questions || []).map((q) => ({
+            ...q,
+            moduleId: m.id,
+            source: res.source
+          }))
+        });
+      }
 
-      const updatedCourse = {
-        ...analysisResult.course,
-        modules: approvedModules
-      };
-
-      setAnalysisResult({
-        ...analysisResult,
-        course: updatedCourse,
-        analysis: updatedAnalysis,
-        questions: updatedQuestions
-      });
-      setGeneratedQuestions(updatedQuestions);
-
+      setModuleResults(results);
+      setAnalysisResult({ ...analysisResult, course: updatedCourse });
       setProcessingProgress(100);
       setProcessingStage('complete');
+      setShowReviewModal(true);
     } catch (error) {
-      console.error('Regeneration error:', error);
+      console.error('Per-module generation error:', error);
       setProcessingStage('error');
-      setProcessingError(error.message || (language === 'en' ? 'Error generating questions' : 'خطأ في إنشاء الأسئلة'));
+      setProcessingError(
+        error.message ||
+          (language === 'en' ? 'Error generating questions' : 'خطأ في إنشاء الأسئلة')
+      );
     }
   };
 
   const handleModulesCancelled = () => {
     setShowModuleEditor(false);
     resetUploadModal();
+  };
+
+  // Phase 4 review handlers
+
+  const handleRegenerateModule = async (moduleId) => {
+    if (!analysisResult) return;
+    const module = analysisResult.course.modules.find((m) => m.id === moduleId);
+    if (!module) return;
+
+    setRegeneratingModuleIds((prev) => ({ ...prev, [moduleId]: true }));
+    try {
+      const res = await generateQuestionsForModule({
+        course: analysisResult.course,
+        module,
+        count: 5,
+        language
+      });
+      setModuleResults((prev) =>
+        prev.map((mr) =>
+          mr.moduleId !== moduleId
+            ? mr
+            : {
+                ...mr,
+                source: res.source,
+                reason: res.reason,
+                questions: (res.questions || []).map((q) => ({
+                  ...q,
+                  moduleId,
+                  source: res.source
+                }))
+              }
+        )
+      );
+    } catch (e) {
+      console.error('Regenerate module failed:', e);
+    } finally {
+      setRegeneratingModuleIds((prev) => {
+        const next = { ...prev };
+        delete next[moduleId];
+        return next;
+      });
+    }
+  };
+
+  // On publish, we flatten every accepted question into a single array,
+  // then also mirror it into assessments[0].preTest so the existing
+  // course-list UI (which reads preTest/postTest) keeps working without
+  // a separate migration. status flips to "published".
+  const handlePublish = () => {
+    if (!analysisResult) return;
+    setPublishing(true);
+    try {
+      const flatQuestions = [];
+      for (const mr of moduleResults) {
+        for (const q of mr.questions) flatQuestions.push(q);
+      }
+
+      const publishedCourse = {
+        ...analysisResult.course,
+        status: 'published',
+        publishedAt: new Date().toISOString(),
+        assessments: [
+          {
+            id: `assessment-${Date.now()}`,
+            courseId: analysisResult.course.id,
+            createdAt: new Date().toISOString(),
+            status: 'published',
+            questions: flatQuestions,
+            preTest: flatQuestions,
+            postTest: []
+          }
+        ]
+      };
+
+      saveCourses([...courses, publishedCourse]);
+      setShowReviewModal(false);
+      resetUploadModal();
+      alert(
+        language === 'en'
+          ? 'Assessment published successfully.'
+          : 'تم نشر التقييم بنجاح.'
+      );
+    } catch (e) {
+      console.error('Publish failed:', e);
+      alert(
+        language === 'en'
+          ? `Publish failed: ${e.message}`
+          : `فشل النشر: ${e.message}`
+      );
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleReviewCancel = () => {
+    setShowReviewModal(false);
+    setShowModuleEditor(true); // back to module editor
   };
 
   // Save the generated course and assessment
@@ -224,6 +338,10 @@ const AdminCustomAssessments = () => {
   const resetUploadModal = () => {
     setShowUploadModal(false);
     setShowModuleEditor(false);
+    setShowReviewModal(false);
+    setModuleResults([]);
+    setRegeneratingModuleIds({});
+    setPublishing(false);
     setUploadedFile(null);
     setProcessingStage('idle');
     setProcessingProgress(0);
@@ -1023,6 +1141,28 @@ const AdminCustomAssessments = () => {
           isRTL={isRTL}
           onConfirm={handleModulesConfirmed}
           onCancel={handleModulesCancelled}
+        />
+      )}
+
+      {/* Question Review & Publish — renders above everything else so
+          the admin can verify every citation before anything is saved. */}
+      {showReviewModal && analysisResult?.course && (
+        <QuestionReviewModal
+          courseTitle={
+            analysisResult.course.title?.[language] ||
+            analysisResult.course.title?.en ||
+            analysisResult.course.sourceFile?.name ||
+            ''
+          }
+          moduleResults={moduleResults}
+          language={language}
+          isRTL={isRTL}
+          regenerating={regeneratingModuleIds}
+          publishing={publishing}
+          onChange={setModuleResults}
+          onRegenerateModule={handleRegenerateModule}
+          onPublish={handlePublish}
+          onCancel={handleReviewCancel}
         />
       )}
     </div>
