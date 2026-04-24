@@ -160,13 +160,16 @@ const parseTXT = async (file) => {
 // ==================== AI CONTENT ANALYSIS ====================
 
 /**
- * Analyze course content and extract structured information
+ * Analyze course content and extract structured information.
+ * `rawText` is preserved on the returned object so callers (and the
+ * question generator) can ground output in the actual source content
+ * instead of working off of summary features only.
  */
 export const analyzeContent = (parsedContent) => {
   const text = parsedContent.text;
-  
-  // Extract key information
+
   const analysis = {
+    rawText: text,
     title: extractTitle(text),
     description: extractDescription(text),
     duration: estimateDuration(text, parsedContent),
@@ -282,50 +285,120 @@ const estimateDuration = (text, parsedContent) => {
   return '3 days';
 };
 
-/**
- * Extract modules/sections from content
- */
-const extractModules = (text) => {
-  const modules = [];
-  
-  // Common section patterns
-  const sectionPatterns = [
-    /(?:module|section|unit|chapter|part)\s*(\d+)[\s:.-]*([^\n]+)/gi,
-    /(?:^|\n)(\d+\.?\s*)([A-Z][^.\n]{10,80})/gm,
-    /(?:^|\n)((?:I{1,3}|IV|V|VI{0,3}|IX|X)\.?\s*)([A-Z][^.\n]{10,80})/gm
-  ];
+// Heading patterns used to detect module boundaries. Ordered strongest
+// to weakest — a line that matches an earlier pattern is preferred.
+// Each regex must be single-line (tested against one trimmed line at a
+// time) and must capture the title text in group 1.
+const HEADING_PATTERNS = [
+  // "Module 1: Introduction" / "Chapter 3 - Risk" / "Unit 2. Basics"
+  /^(?:module|section|unit|chapter|part|lesson|الوحدة|الفصل|القسم)\s*\d+\s*[:.\-–—]?\s*(.{3,120})$/i,
+  // "1. Introduction to Risk"  /  "1) Introduction to Risk"
+  /^\d{1,2}[.)]\s+([A-Z؀-ۿ].{3,120})$/,
+  // "I. Introduction" / "IV. Advanced Topics"
+  /^(?:I{1,3}|IV|V|VI{0,3}|IX|X)\.\s+([A-Z].{3,120})$/,
+  // Short ALL-CAPS title line: "LEADERSHIP FUNDAMENTALS"
+  /^([A-Z][A-Z0-9 \-&/]{5,80})$/
+];
 
-  for (const pattern of sectionPatterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const title = match[2]?.trim();
-      if (title && title.length > 5 && !modules.some(m => m.title.en === title)) {
-        modules.push({
-          id: `module-${modules.length + 1}`,
-          title: { en: title, ar: title },
-          objectives: [],
-          topics: []
-        });
-      }
+/**
+ * Detect module boundaries in `text` and return modules with content
+ * spans. Each returned module has `{id, title, startOffset, endOffset,
+ * content, objectives, topics}`. The content field is the verbatim slice
+ * of the source text between this heading and the next, which is what
+ * downstream question generation must be grounded against.
+ *
+ * Exported so the admin boundary-edit UI can re-slice the text after an
+ * admin adjusts where a module starts or ends.
+ */
+export const extractModules = (text) => {
+  if (!text || typeof text !== 'string') return [];
+
+  // Walk the text line-by-line while tracking absolute offsets so each
+  // detected heading has a real byte position we can slice on later.
+  const headings = [];
+  let cursor = 0;
+  for (const rawLine of text.split('\n')) {
+    const lineStart = cursor;
+    cursor += rawLine.length + 1; // +1 for the '\n'
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    for (const pattern of HEADING_PATTERNS) {
+      const match = line.match(pattern);
+      if (!match) continue;
+      const title = match[1].trim();
+      // Skip sentences that happened to match (long, ends with period)
+      if (title.length > 120) break;
+      if (title.endsWith('.') && title.split(' ').length > 10) break;
+      headings.push({ title, startOffset: lineStart });
+      break;
     }
   }
 
-  // If no modules found, create based on content structure
-  if (modules.length === 0) {
-    const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 100);
-    const moduleCount = Math.min(Math.ceil(paragraphs.length / 3), 5);
-    
-    for (let i = 0; i < moduleCount; i++) {
+  // Deduplicate consecutive identical headings caused by doc artefacts.
+  const deduped = headings.filter(
+    (h, i) => i === 0 || h.title.toLowerCase() !== headings[i - 1].title.toLowerCase()
+  );
+
+  const MIN_MODULE_LEN = 80; // characters; drop "headings" with no body
+  const MAX_MODULES = 10;
+
+  let modules = [];
+  if (deduped.length >= 2) {
+    for (let i = 0; i < deduped.length && modules.length < MAX_MODULES; i++) {
+      const h = deduped[i];
+      const endOffset = i + 1 < deduped.length ? deduped[i + 1].startOffset : text.length;
+      const content = text.slice(h.startOffset, endOffset).trim();
+      if (content.length < MIN_MODULE_LEN) continue;
       modules.push({
-        id: `module-${i + 1}`,
-        title: { en: `Module ${i + 1}`, ar: `الوحدة ${i + 1}` },
+        id: `module-${modules.length + 1}`,
+        title: { en: h.title, ar: h.title },
+        startOffset: h.startOffset,
+        endOffset,
+        content,
         objectives: [],
         topics: []
       });
     }
   }
 
-  return modules.slice(0, 10); // Max 10 modules
+  // Fallback: no usable headings — carve the text into up to 5 roughly
+  // equal chunks on paragraph boundaries. Admin can re-split in the UI.
+  if (modules.length === 0) {
+    const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 50);
+    if (paragraphs.length === 0) return [];
+
+    const chunkCount = Math.min(Math.max(1, Math.ceil(paragraphs.length / 3)), 5);
+    const perChunk = Math.ceil(paragraphs.length / chunkCount);
+
+    // Recover offsets by searching for each paragraph in the source. This
+    // is O(n*m) but fine for typical course documents (<<1MB).
+    let searchFrom = 0;
+    const chunks = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const group = paragraphs.slice(i * perChunk, (i + 1) * perChunk);
+      if (group.length === 0) continue;
+      const firstPara = group[0];
+      const startOffset = text.indexOf(firstPara, searchFrom);
+      searchFrom = startOffset + firstPara.length;
+      chunks.push({ startOffset, group });
+    }
+
+    modules = chunks.map((c, i) => {
+      const endOffset = i + 1 < chunks.length ? chunks[i + 1].startOffset : text.length;
+      return {
+        id: `module-${i + 1}`,
+        title: { en: `Module ${i + 1}`, ar: `الوحدة ${i + 1}` },
+        startOffset: c.startOffset,
+        endOffset,
+        content: text.slice(c.startOffset, endOffset).trim(),
+        objectives: [],
+        topics: []
+      };
+    });
+  }
+
+  return modules;
 };
 
 /**
@@ -995,13 +1068,18 @@ export const processUploadedCourse = async (file, options = {}) => {
   // Step 3: Generate questions
   const questions = generateIntelligentQuestions(analysis, options);
   
-  // Step 4: Create course object
+  // Step 4: Create course object.
+  // `parsedText` and per-module `content` are persisted here so later
+  // steps (admin boundary edits, grounded question generation, source
+  // citations) can operate against the actual file contents instead of
+  // a lossy summary.
   const course = {
     id: `course-${Date.now()}`,
     title: analysis.title,
     description: analysis.description,
     duration: analysis.duration,
     targetAudience: { en: 'General', ar: 'عام' },
+    parsedText: analysis.rawText,
     modules: analysis.modules.map((m, idx) => ({
       ...m,
       objectives: analysis.learningObjectives.slice(idx * 3, (idx + 1) * 3)
