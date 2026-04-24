@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../utils/LanguageContext';
 import Header from '../components/Header';
 import * as auth from '../utils/auth';
-import { processUploadedCourse } from '../utils/courseAIAnalyzer';
+import { processUploadedCourse, generateIntelligentQuestions } from '../utils/courseAIAnalyzer';
+import ModuleBoundaryEditor from '../components/ModuleBoundaryEditor';
 import { bloomsLevels, questionTypes } from '../data/customAssessmentEngine';
 
 const AdminCustomAssessments = () => {
@@ -21,10 +22,11 @@ const AdminCustomAssessments = () => {
   
   // Upload and AI processing states
   const [uploadedFile, setUploadedFile] = useState(null);
-  const [processingStage, setProcessingStage] = useState('idle'); // idle, uploading, parsing, analyzing, generating, complete, error
+  const [processingStage, setProcessingStage] = useState('idle'); // idle, uploading, parsing, analyzing, reviewing-modules, generating, complete, error
   const [processingProgress, setProcessingProgress] = useState(0);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [processingError, setProcessingError] = useState(null);
+  const [showModuleEditor, setShowModuleEditor] = useState(false);
 
   useEffect(() => {
     if (!auth.isLoggedIn() || !auth.isAdmin()) {
@@ -107,28 +109,78 @@ const AdminCustomAssessments = () => {
       setProcessingStage('analyzing');
       setProcessingProgress(50);
       
-      // Process the file with AI
+      // Parse + analyze + initial (rule-based) question generation.
+      // Question output from this call is provisional — if the admin
+      // edits module boundaries below we regenerate against the
+      // approved modules before moving on.
       const result = await processUploadedCourse(uploadedFile, {
         minQuestions: 10,
         maxQuestions: 20,
         language
       });
 
-      setProcessingProgress(80);
-      setProcessingStage('generating');
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setProcessingProgress(100);
-      setProcessingStage('complete');
+      setProcessingProgress(70);
       setAnalysisResult(result);
       setGeneratedQuestions(result.questions);
+
+      // Pause for admin review of auto-detected module boundaries.
+      // Generation resumes from handleModulesConfirmed below.
+      setProcessingStage('reviewing-modules');
+      setShowModuleEditor(true);
 
     } catch (error) {
       console.error('Processing error:', error);
       setProcessingStage('error');
       setProcessingError(error.message || (language === 'en' ? 'Error processing file' : 'خطأ في معالجة الملف'));
     }
+  };
+
+  // Admin confirmed (possibly edited) modules. Regenerate questions
+  // against the approved module list so downstream flow sees only
+  // content the admin signed off on.
+  const handleModulesConfirmed = (approvedModules) => {
+    if (!analysisResult) return;
+
+    setShowModuleEditor(false);
+    setProcessingStage('generating');
+    setProcessingProgress(85);
+
+    try {
+      const updatedAnalysis = {
+        ...analysisResult.analysis,
+        modules: approvedModules
+      };
+      const updatedQuestions = generateIntelligentQuestions(updatedAnalysis, {
+        minQuestions: 10,
+        maxQuestions: 20,
+        language
+      });
+
+      const updatedCourse = {
+        ...analysisResult.course,
+        modules: approvedModules
+      };
+
+      setAnalysisResult({
+        ...analysisResult,
+        course: updatedCourse,
+        analysis: updatedAnalysis,
+        questions: updatedQuestions
+      });
+      setGeneratedQuestions(updatedQuestions);
+
+      setProcessingProgress(100);
+      setProcessingStage('complete');
+    } catch (error) {
+      console.error('Regeneration error:', error);
+      setProcessingStage('error');
+      setProcessingError(error.message || (language === 'en' ? 'Error generating questions' : 'خطأ في إنشاء الأسئلة'));
+    }
+  };
+
+  const handleModulesCancelled = () => {
+    setShowModuleEditor(false);
+    resetUploadModal();
   };
 
   // Save the generated course and assessment
@@ -171,6 +223,7 @@ const AdminCustomAssessments = () => {
 
   const resetUploadModal = () => {
     setShowUploadModal(false);
+    setShowModuleEditor(false);
     setUploadedFile(null);
     setProcessingStage('idle');
     setProcessingProgress(0);
@@ -198,6 +251,7 @@ const AdminCustomAssessments = () => {
       uploading: { en: 'Uploading file...', ar: 'جاري رفع الملف...' },
       parsing: { en: 'Parsing document content...', ar: 'جاري تحليل محتوى المستند...' },
       analyzing: { en: 'AI is analyzing course content...', ar: 'الذكاء الاصطناعي يحلل محتوى الدورة...' },
+      'reviewing-modules': { en: 'Waiting for module review...', ar: 'في انتظار مراجعة الوحدات...' },
       generating: { en: 'Generating assessment questions...', ar: 'جاري إنشاء أسئلة التقييم...' },
       complete: { en: 'Processing complete!', ar: 'اكتملت المعالجة!' },
       error: { en: 'Error occurred', ar: 'حدث خطأ' }
@@ -956,6 +1010,20 @@ const AdminCustomAssessments = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Module Boundary Editor — renders last so it paints on top of
+          the upload modal. Pauses the upload flow so the admin can
+          adjust auto-detected module content before questions are
+          regenerated from it. */}
+      {showModuleEditor && analysisResult?.course && (
+        <ModuleBoundaryEditor
+          course={analysisResult.course}
+          language={language}
+          isRTL={isRTL}
+          onConfirm={handleModulesConfirmed}
+          onCancel={handleModulesCancelled}
+        />
       )}
     </div>
   );
