@@ -13,6 +13,10 @@
 // returns a 503 so the client can fall back to the rule-based generator.
 
 import Anthropic from '@anthropic-ai/sdk';
+import {
+  normalizeForCitation,
+  validateQuestion
+} from './_grounding.js';
 
 const CLAUDE_MODEL = 'claude-opus-4-7';
 
@@ -74,30 +78,6 @@ const QUESTION_SCHEMA = {
   },
   required: ['questions'],
   additionalProperties: false
-};
-
-// Whitespace-tolerant substring check. PDF/DOCX text often comes out with
-// odd spacing, so we normalize both sides before comparing. The citation
-// is still required to appear in the source — we just don't punish the
-// model for collapsing a line break into a space.
-const normalizeForCitation = (s) => (s || '').replace(/\s+/g, ' ').trim();
-
-const isCitationValid = (citation, normalizedContent) => {
-  const normalizedCitation = normalizeForCitation(citation);
-  if (normalizedCitation.length < 12) return false; // too short to be meaningful
-  return normalizedContent.includes(normalizedCitation);
-};
-
-const validateQuestion = (q, normalizedContent) => {
-  if (!q || typeof q !== 'object') return false;
-  if (typeof q.stem !== 'string' || q.stem.trim().length < 5) return false;
-  if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > 6) return false;
-  if (!q.options.every((o) => typeof o === 'string' && o.trim().length > 0)) return false;
-  if (!Number.isInteger(q.correctIndex)) return false;
-  if (q.correctIndex < 0 || q.correctIndex >= q.options.length) return false;
-  if (typeof q.explanation !== 'string') return false;
-  if (!isCitationValid(q.citation, normalizedContent)) return false;
-  return true;
 };
 
 // Match the session/role gate used elsewhere in the app. We reuse the
