@@ -90,3 +90,18 @@ wrangler d1 execute kafaat-db --file=backup/seed.sql
 Any refactor goes in `functions/` (or the new `migrations/` folder once we
 create it). This folder is frozen so we always have a reference point for
 "what did production look like before we touched it."
+
+## Deployment secret added after snapshot
+
+As of the Phase 2 work on custom-assessment grounding, a new Cloudflare
+Pages secret is required for the Claude-backed generation endpoint:
+
+- **Secret name:** `ANTHROPIC_API_KEY`
+- **Used by:** `functions/api/custom/generate-questions.js`
+- **Set via:** `wrangler pages secret put ANTHROPIC_API_KEY`
+- **Behavior if missing:** the endpoint returns `503` with `fallback: true`,
+  and the client is expected to fall back to the rule-based generator
+  (wired in Phase 3).
+
+This is intentionally server-side only — the key never leaves the
+Cloudflare Function, so the browser bundle stays clean.
