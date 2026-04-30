@@ -114,6 +114,11 @@ const AdminCustomAssessments = () => {
         language
       });
 
+      // Check if processing was successful
+      if (!result.success) {
+        throw new Error(result.error || (language === 'en' ? 'Failed to process file' : 'فشل في معالجة الملف'));
+      }
+
       setProcessingProgress(80);
       setProcessingStage('generating');
       
@@ -731,30 +736,48 @@ const AdminCustomAssessments = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-gray-500">{language === 'en' ? 'Title' : 'العنوان'}</p>
-                        <p className="font-medium">{analysisResult.course.title?.en || analysisResult.course.title}</p>
+                        <p className="font-medium">{analysisResult.course?.title?.[language] || analysisResult.course?.title?.en || analysisResult.analysis?.title || 'Training Course'}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">{language === 'en' ? 'Duration' : 'المدة'}</p>
-                        <p className="font-medium">{analysisResult.course.duration}</p>
+                        <p className="text-sm text-gray-500">{language === 'en' ? 'Modules Found' : 'الوحدات المكتشفة'}</p>
+                        <p className="font-medium">{analysisResult.analysis?.modulesCount || analysisResult.course?.modules?.length || 0}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">{language === 'en' ? 'Difficulty' : 'المستوى'}</p>
-                        <p className="font-medium capitalize">{analysisResult.analysis.difficulty}</p>
+                        <p className="text-sm text-gray-500">{language === 'en' ? 'Objectives Found' : 'الأهداف المكتشفة'}</p>
+                        <p className="font-medium">{analysisResult.analysis?.objectivesCount || analysisResult.course?.objectives?.length || 0}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">{language === 'en' ? 'Content Type' : 'نوع المحتوى'}</p>
-                        <p className="font-medium capitalize">{analysisResult.analysis.contentType}</p>
+                        <p className="text-sm text-gray-500">{language === 'en' ? 'Questions Generated' : 'الأسئلة المُنشأة'}</p>
+                        <p className="font-medium">{analysisResult.analysis?.questionsGenerated || analysisResult.questions?.all?.length || 0}</p>
                       </div>
                     </div>
 
-                    {/* Key Topics */}
-                    {analysisResult.analysis.keyTopics?.length > 0 && (
+                    {/* Learning Objectives */}
+                    {analysisResult.course?.objectives?.length > 0 && (
                       <div>
-                        <p className="text-sm text-gray-500 mb-2">{language === 'en' ? 'Key Topics Identified' : 'المواضيع الرئيسية المحددة'}</p>
+                        <p className="text-sm text-gray-500 mb-2">{language === 'en' ? 'Learning Objectives Extracted' : 'أهداف التعلم المستخرجة'}</p>
+                        <div className="space-y-2">
+                          {analysisResult.course.objectives.slice(0, 4).map((obj, idx) => (
+                            <div key={idx} className="flex items-start gap-2 text-sm bg-white p-2 rounded">
+                              <span className="text-purple-600">•</span>
+                              <span className="text-gray-700">{(obj?.[language] || obj?.en || obj || '').substring(0, 100)}</span>
+                            </div>
+                          ))}
+                          {analysisResult.course.objectives.length > 4 && (
+                            <p className="text-xs text-gray-500">+{analysisResult.course.objectives.length - 4} {language === 'en' ? 'more objectives' : 'أهداف أخرى'}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Modules */}
+                    {analysisResult.course?.modules?.length > 0 && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-2">{language === 'en' ? 'Course Modules' : 'وحدات الدورة'}</p>
                         <div className="flex flex-wrap gap-2">
-                          {analysisResult.analysis.keyTopics.slice(0, 6).map((topic, idx) => (
+                          {analysisResult.course.modules.slice(0, 6).map((module, idx) => (
                             <span key={idx} className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
-                              {topic.substring(0, 30)}{topic.length > 30 ? '...' : ''}
+                              {(module?.title?.[language] || module?.title?.en || module?.title || '').substring(0, 30)}
                             </span>
                           ))}
                         </div>
