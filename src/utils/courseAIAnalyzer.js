@@ -1,5 +1,5 @@
 // AI-Powered Course Content Analyzer
-// Uses LLM (GPT) to truly UNDERSTAND course content and generate intelligent assessments
+// Uses LLM (GPT) to truly UNDERSTAND course content
 // Supports both English and Arabic content
 
 import * as pdfjsLib from 'pdfjs-dist';
@@ -8,51 +8,67 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 // Initialize PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-// ==================== LLM API CONFIGURATION ====================
+// ==================== API CONFIGURATION ====================
 
-const LLM_CONFIG = {
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY || null,
-  baseUrl: import.meta.env.VITE_OPENAI_BASE_URL || 'https://www.genspark.ai/api/llm_proxy/v1',
-  model: 'gpt-5'
-};
+// GenSpark LLM API configuration
+const GENSPARK_API_BASE = 'https://www.genspark.ai/api/llm_proxy/v1';
+const LLM_MODEL = 'gpt-5';
 
 /**
- * Call LLM API to analyze content
+ * Call LLM API directly for course analysis
  */
-const callLLM = async (systemPrompt, userPrompt, maxTokens = 4000) => {
+const callLLMAPI = async (systemPrompt, userPrompt, maxTokens = 4000) => {
+  // Try Cloudflare function first, then fallback to direct API
   try {
-    // Try to get API key from environment or use the proxy
-    const apiKey = LLM_CONFIG.apiKey || 'gsk-proxy';
-    
-    const response = await fetch(`${LLM_CONFIG.baseUrl}/chat/completions`, {
+    const response = await fetch('/api/ai-analyze', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: LLM_CONFIG.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        max_tokens: maxTokens,
-        temperature: 0.7
+        action: 'direct',
+        systemPrompt,
+        userPrompt,
+        maxTokens
       })
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('LLM API Error:', errorText);
-      throw new Error(`LLM API error: ${response.status}`);
+    if (response.ok) {
+      const result = await response.json();
+      if (result.success && result.data) {
+        return result.data;
+      }
     }
-
-    const data = await response.json();
-    return data.choices[0]?.message?.content || '';
-  } catch (error) {
-    console.error('LLM call failed:', error);
-    throw error;
+  } catch (e) {
+    console.log('Cloudflare function not available, using fallback');
   }
+
+  // If Cloudflare function fails, throw error with helpful message
+  throw new Error('AI service temporarily unavailable. Please ensure the API is configured.');
+};
+
+/**
+ * Parse JSON from LLM response safely
+ */
+const parseJSONResponse = (response) => {
+  let cleanResponse = response.trim();
+  
+  // Remove markdown code blocks
+  if (cleanResponse.startsWith('```json')) {
+    cleanResponse = cleanResponse.slice(7);
+  }
+  if (cleanResponse.startsWith('```')) {
+    cleanResponse = cleanResponse.slice(3);
+  }
+  if (cleanResponse.endsWith('```')) {
+    cleanResponse = cleanResponse.slice(0, -3);
+  }
+  
+  // Find JSON array or object
+  const jsonMatch = cleanResponse.match(/[\[{][\s\S]*[\]}]/);
+  if (jsonMatch) {
+    cleanResponse = jsonMatch[0];
+  }
+  
+  return JSON.parse(cleanResponse.trim());
 };
 
 // ==================== FILE PARSING ====================
@@ -198,80 +214,7 @@ const parseTXT = async (file) => {
   };
 };
 
-// ==================== AI-POWERED CONTENT ANALYSIS ====================
-
-/**
- * Use AI to analyze and understand course content
- */
-const analyzeWithAI = async (courseText, onProgress) => {
-  // Limit text to avoid token limits (approximately 15000 characters = ~4000 tokens)
-  const maxLength = 15000;
-  const truncatedText = courseText.length > maxLength 
-    ? courseText.substring(0, maxLength) + '\n\n[Content truncated for analysis...]'
-    : courseText;
-
-  const systemPrompt = `You are an expert instructional designer and assessment specialist. Your task is to analyze training course content and extract key information for assessment creation.
-
-You MUST respond ONLY with valid JSON, no markdown, no explanations. The JSON must follow this exact structure:
-{
-  "language": "en" or "ar",
-  "title": "Course title",
-  "description": "Brief course description (2-3 sentences)",
-  "duration": "Estimated duration",
-  "objectives": ["objective 1", "objective 2", ...],
-  "modules": [
-    {"title": "Module title", "keyPoints": ["point 1", "point 2"]}
-  ],
-  "keyConcepts": [
-    {"term": "concept name", "definition": "what it means", "importance": "why it matters"}
-  ],
-  "skills": ["skill 1", "skill 2"],
-  "targetAudience": "Who this course is for"
-}`;
-
-  const userPrompt = `Analyze this training course content and extract the structured information. Detect the language (Arabic or English) and respond in the SAME language as the content.
-
-COURSE CONTENT:
-${truncatedText}
-
-Remember: Respond ONLY with valid JSON, no markdown code blocks, no additional text.`;
-
-  if (onProgress) onProgress('analyzing', 30);
-  
-  const response = await callLLM(systemPrompt, userPrompt, 2000);
-  
-  // Parse the JSON response
-  try {
-    // Clean the response - remove markdown code blocks if present
-    let cleanResponse = response.trim();
-    if (cleanResponse.startsWith('```json')) {
-      cleanResponse = cleanResponse.slice(7);
-    }
-    if (cleanResponse.startsWith('```')) {
-      cleanResponse = cleanResponse.slice(3);
-    }
-    if (cleanResponse.endsWith('```')) {
-      cleanResponse = cleanResponse.slice(0, -3);
-    }
-    cleanResponse = cleanResponse.trim();
-    
-    return JSON.parse(cleanResponse);
-  } catch (parseError) {
-    console.error('Failed to parse AI analysis:', parseError);
-    console.log('Raw response:', response);
-    // Return a basic structure if parsing fails
-    return {
-      language: detectLanguage(courseText),
-      title: extractBasicTitle(courseText),
-      description: '',
-      objectives: [],
-      modules: [],
-      keyConcepts: [],
-      skills: [],
-      targetAudience: ''
-    };
-  }
-};
+// ==================== AI ANALYSIS ====================
 
 /**
  * Detect language from text
@@ -283,142 +226,209 @@ const detectLanguage = (text) => {
 };
 
 /**
- * Extract basic title from text
+ * Analyze course content with AI
  */
-const extractBasicTitle = (text) => {
-  const lines = text.split('\n').filter(l => l.trim().length > 0);
-  for (const line of lines.slice(0, 5)) {
-    if (line.trim().length >= 5 && line.trim().length <= 100) {
-      return line.trim();
-    }
+const analyzeCourseContent = async (courseText) => {
+  const maxLength = 15000;
+  const truncatedText = courseText.length > maxLength 
+    ? courseText.substring(0, maxLength) + '\n\n[Content truncated...]'
+    : courseText;
+
+  const detectedLang = detectLanguage(courseText);
+
+  const systemPrompt = `You are an expert instructional designer and course content analyst. Your task is to analyze training course content and extract the most important educational information.
+
+CRITICAL INSTRUCTIONS:
+1. Identify the MAIN TOPIC/SUBJECT of the course
+2. Extract LEARNING OBJECTIVES (what the learner will be able to do after completing the course)
+3. Identify KEY CONCEPTS, DEFINITIONS, and IMPORTANT FACTS
+4. Detect MODULES or SECTIONS of the course
+5. Detect the language (Arabic or English) and respond in THE SAME LANGUAGE as the content
+
+Respond ONLY with valid JSON (no markdown code blocks):
+{
+  "language": "en" or "ar",
+  "title": "Main course title or topic",
+  "description": "Brief description of what the course covers (2-3 sentences)",
+  "duration": "Estimated duration if mentioned",
+  "objectives": ["Learning objective 1", "Learning objective 2", ...],
+  "modules": [
+    {"title": "Module/Section name", "keyPoints": ["Key point 1", "Key point 2"]}
+  ],
+  "keyConcepts": [
+    {"term": "Concept name", "definition": "What it means", "importance": "Why it matters"}
+  ],
+  "skills": ["Skill 1", "Skill 2"],
+  "targetAudience": "Who this course is designed for",
+  "keyFacts": ["Important fact 1", "Important fact 2"],
+  "procedures": ["Step-by-step procedure if any"]
+}`;
+
+  const userPrompt = `Analyze this training course content carefully. Extract all educational information including:
+- The main title/topic
+- Learning objectives (what learners will be able to do)
+- Modules or sections
+- Key concepts and definitions
+- Important facts and procedures
+- Skills being taught
+
+The content appears to be in ${detectedLang === 'ar' ? 'Arabic' : 'English'}. Respond in the SAME language.
+
+COURSE CONTENT:
+${truncatedText}
+
+Respond with JSON only, no markdown.`;
+
+  try {
+    const response = await callLLMAPI(systemPrompt, userPrompt, 3000);
+    return parseJSONResponse(response);
+  } catch (error) {
+    console.error('AI analysis failed:', error);
+    // Return basic fallback
+    return {
+      language: detectedLang,
+      title: extractBasicTitle(courseText),
+      description: '',
+      objectives: [],
+      modules: [],
+      keyConcepts: [],
+      skills: [],
+      targetAudience: '',
+      keyFacts: [],
+      procedures: []
+    };
   }
-  return 'Training Course';
 };
 
-// ==================== AI-POWERED QUESTION GENERATION ====================
-
 /**
- * Generate intelligent questions using AI
+ * Generate questions with AI based on course analysis
  */
-const generateQuestionsWithAI = async (analysis, courseText, config, onProgress) => {
-  const { minQuestions = 10, maxQuestions = 20 } = config;
+const generateQuestionsWithAI = async (analysis, courseText, config) => {
+  const { minQuestions = 10, maxQuestions = 20 } = config || {};
   const language = analysis.language || 'en';
   const targetCount = Math.min(maxQuestions, Math.max(minQuestions, 15));
-  
-  // Prepare context for AI
-  const courseContext = `
-COURSE TITLE: ${analysis.title}
-DESCRIPTION: ${analysis.description}
-OBJECTIVES: ${(analysis.objectives || []).join('; ')}
-MODULES: ${(analysis.modules || []).map(m => m.title).join('; ')}
-KEY CONCEPTS: ${(analysis.keyConcepts || []).map(c => `${c.term}: ${c.definition}`).join('; ')}
-SKILLS: ${(analysis.skills || []).join('; ')}
-`;
 
-  // Limit course text for question generation
-  const maxTextLength = 10000;
-  const truncatedCourseText = courseText.length > maxTextLength
+  const maxTextLength = 12000;
+  const truncatedText = courseText.length > maxTextLength
     ? courseText.substring(0, maxTextLength)
     : courseText;
 
-  const systemPrompt = `You are an expert assessment designer creating questions for a training course assessment. Generate high-quality questions that test understanding of the course content.
+  // Build context from analysis
+  const courseContext = `
+COURSE TITLE: ${analysis.title}
+DESCRIPTION: ${analysis.description || 'Training course'}
+LEARNING OBJECTIVES: ${(analysis.objectives || []).join('; ')}
+MODULES: ${(analysis.modules || []).map(m => `${m.title}: ${(m.keyPoints || []).join(', ')}`).join('; ')}
+KEY CONCEPTS: ${(analysis.keyConcepts || []).map(c => `${c.term}: ${c.definition}`).join('; ')}
+KEY FACTS: ${(analysis.keyFacts || []).join('; ')}
+SKILLS: ${(analysis.skills || []).join(', ')}
+`;
+
+  const systemPrompt = `You are an expert assessment designer specializing in creating educational assessments. Your task is to create questions that TEST REAL UNDERSTANDING of the course content.
 
 CRITICAL RULES:
 1. Questions MUST be directly based on the SPECIFIC course content provided
-2. Questions should test real understanding, not just memorization
-3. Include a mix of question types: multiple choice (MCQ), true/false, and scenario-based
-4. Each question must have clear correct answers
-5. For MCQ: provide 4 options with only ONE correct answer
-6. Generate questions in ${language === 'ar' ? 'Arabic' : 'English'} language
-7. Questions should cover different cognitive levels (knowledge, understanding, application, analysis)
+2. Questions should test UNDERSTANDING and APPLICATION, not just memorization
+3. Each question MUST reference specific content from the course
+4. Mix question types: Multiple Choice (MCQ), True/False, and Scenario-based
+5. Generate questions in ${language === 'ar' ? 'Arabic (العربية)' : 'English'}
+6. Cover different cognitive levels (remember, understand, apply, analyze)
 
-You MUST respond ONLY with valid JSON array, no markdown, no explanations:
+QUESTION FORMATS:
+1. MCQ: 4 options, exactly ONE correct answer
+2. True/False: Clear statement that is definitively true or false based on course content
+3. Scenario: Real-world situation applying course knowledge
+
+Respond with a JSON array ONLY (no markdown):
 [
   {
     "type": "mcq",
-    "question": "The question text",
+    "question": "Question testing specific course content",
     "options": [
       {"id": "a", "text": "Option A", "isCorrect": false},
-      {"id": "b", "text": "Option B", "isCorrect": true},
+      {"id": "b", "text": "Correct option", "isCorrect": true},
       {"id": "c", "text": "Option C", "isCorrect": false},
       {"id": "d", "text": "Option D", "isCorrect": false}
     ],
-    "explanation": "Why the correct answer is correct",
+    "explanation": "Why this answer is correct based on course content",
     "bloomLevel": "understand",
-    "topic": "Related course topic"
+    "topic": "Related topic from course"
   },
   {
     "type": "trueFalse",
-    "question": "Statement to evaluate",
+    "question": "Statement about course content",
     "correctAnswer": true,
-    "explanation": "Explanation",
+    "explanation": "Why this is true/false based on course content",
     "bloomLevel": "remember",
     "topic": "Related topic"
   },
   {
     "type": "scenario",
-    "scenario": "Describe a realistic situation",
-    "question": "What should be done?",
+    "scenario": "Real-world situation description",
+    "question": "What should the person do based on course knowledge?",
     "options": [
-      {"id": "a", "text": "Option A", "isCorrect": true, "score": 4},
-      {"id": "b", "text": "Option B", "isCorrect": false, "score": 2},
-      {"id": "c", "text": "Option C", "isCorrect": false, "score": 1},
-      {"id": "d", "text": "Option D", "isCorrect": false, "score": 0}
+      {"id": "a", "text": "Best answer", "isCorrect": true, "score": 4},
+      {"id": "b", "text": "Acceptable answer", "isCorrect": false, "score": 2},
+      {"id": "c", "text": "Poor answer", "isCorrect": false, "score": 1},
+      {"id": "d", "text": "Wrong answer", "isCorrect": false, "score": 0}
     ],
-    "explanation": "Why the best answer is correct",
+    "explanation": "Why this is the best approach",
     "bloomLevel": "apply",
     "topic": "Related topic"
   }
 ]`;
 
-  const userPrompt = `Generate exactly ${targetCount} assessment questions for this training course.
+  const userPrompt = `Create ${targetCount} assessment questions for this course. The questions MUST be based on the ACTUAL CONTENT provided.
 
 ${courseContext}
 
-ACTUAL COURSE CONTENT TO BASE QUESTIONS ON:
-${truncatedCourseText}
+FULL COURSE CONTENT FOR REFERENCE:
+${truncatedText}
 
 REQUIREMENTS:
-- Generate ${Math.floor(targetCount * 0.5)} multiple choice questions
-- Generate ${Math.floor(targetCount * 0.3)} true/false questions  
-- Generate ${Math.ceil(targetCount * 0.2)} scenario-based questions
-- All questions must be based on the ACTUAL course content above
-- Questions should be practical and test real understanding
+- Generate approximately ${Math.floor(targetCount * 0.5)} MCQ questions
+- Generate approximately ${Math.floor(targetCount * 0.3)} True/False questions  
+- Generate approximately ${Math.ceil(targetCount * 0.2)} Scenario-based questions
+- ALL questions must be based on SPECIFIC content from the course above
 - Language: ${language === 'ar' ? 'Arabic (العربية)' : 'English'}
+- Include explanations that reference the course content
 
-Respond with a JSON array only, no markdown code blocks.`;
+Respond with JSON array only, no markdown.`;
 
-  if (onProgress) onProgress('generating', 60);
-
-  const response = await callLLM(systemPrompt, userPrompt, 4000);
-  
-  // Parse questions
   try {
-    let cleanResponse = response.trim();
-    if (cleanResponse.startsWith('```json')) {
-      cleanResponse = cleanResponse.slice(7);
-    }
-    if (cleanResponse.startsWith('```')) {
-      cleanResponse = cleanResponse.slice(3);
-    }
-    if (cleanResponse.endsWith('```')) {
-      cleanResponse = cleanResponse.slice(0, -3);
-    }
-    cleanResponse = cleanResponse.trim();
-    
-    const questions = JSON.parse(cleanResponse);
-    return Array.isArray(questions) ? questions : [];
-  } catch (parseError) {
-    console.error('Failed to parse AI questions:', parseError);
-    console.log('Raw response:', response);
-    return [];
+    const response = await callLLMAPI(systemPrompt, userPrompt, 5000);
+    return parseJSONResponse(response);
+  } catch (error) {
+    console.error('AI question generation failed:', error);
+    throw new Error('Failed to generate questions. Please try again.');
   }
 };
+
+/**
+ * Extract basic title (fallback)
+ */
+const extractBasicTitle = (text) => {
+  const lines = text.split('\n').filter(l => l.trim().length > 0);
+  for (const line of lines.slice(0, 10)) {
+    const trimmed = line.trim();
+    if (trimmed.length >= 5 && trimmed.length <= 150) {
+      // Skip lines that look like page numbers or headers
+      if (!/^\d+$/.test(trimmed) && !/^page\s*\d+/i.test(trimmed)) {
+        return trimmed;
+      }
+    }
+  }
+  return 'Training Course';
+};
+
+// ==================== QUESTION FORMATTING ====================
 
 /**
  * Format questions for the assessment system
  */
 const formatQuestions = (aiQuestions, language) => {
+  if (!Array.isArray(aiQuestions)) return [];
+  
   const formatted = aiQuestions.map((q, idx) => {
     const baseQuestion = {
       id: `q-${idx + 1}`,
@@ -434,15 +444,12 @@ const formatQuestions = (aiQuestions, language) => {
       return {
         ...baseQuestion,
         question: {
-          en: language === 'en' ? q.question : q.question,
-          ar: language === 'ar' ? q.question : q.question
+          en: q.question,
+          ar: q.question
         },
         correctAnswer: q.correctAnswer,
         feedback: {
-          correct: { 
-            en: 'Correct!', 
-            ar: 'صحيح!' 
-          },
+          correct: { en: 'Correct!', ar: 'صحيح!' },
           incorrect: { 
             en: q.explanation || 'Review this topic in the course material.', 
             ar: q.explanation || 'راجع هذا الموضوع في مادة الدورة.' 
@@ -453,25 +460,22 @@ const formatQuestions = (aiQuestions, language) => {
       return {
         ...baseQuestion,
         scenario: {
-          en: language === 'en' ? q.scenario : q.scenario,
-          ar: language === 'ar' ? q.scenario : q.scenario
+          en: q.scenario,
+          ar: q.scenario
         },
         question: {
-          en: language === 'en' ? q.question : q.question,
-          ar: language === 'ar' ? q.question : q.question
+          en: q.question,
+          ar: q.question
         },
         options: (q.options || []).map(opt => ({
           id: opt.id,
-          text: {
-            en: language === 'en' ? opt.text : opt.text,
-            ar: language === 'ar' ? opt.text : opt.text
-          },
+          text: { en: opt.text, ar: opt.text },
           isCorrect: opt.isCorrect,
           score: opt.score || (opt.isCorrect ? 4 : 0)
         })),
         feedback: {
-          en: q.explanation || 'Review the course material for more details.',
-          ar: q.explanation || 'راجع مادة الدورة لمزيد من التفاصيل.'
+          en: q.explanation || 'Review the course material.',
+          ar: q.explanation || 'راجع مادة الدورة.'
         }
       };
     } else {
@@ -479,15 +483,12 @@ const formatQuestions = (aiQuestions, language) => {
       return {
         ...baseQuestion,
         question: {
-          en: language === 'en' ? q.question : q.question,
-          ar: language === 'ar' ? q.question : q.question
+          en: q.question,
+          ar: q.question
         },
         options: (q.options || []).map(opt => ({
           id: opt.id,
-          text: {
-            en: language === 'en' ? opt.text : opt.text,
-            ar: language === 'ar' ? opt.text : opt.text
-          },
+          text: { en: opt.text, ar: opt.text },
           isCorrect: opt.isCorrect
         })),
         feedback: {
@@ -496,8 +497,8 @@ const formatQuestions = (aiQuestions, language) => {
             ar: 'صحيح! ' + (q.explanation || '')
           },
           incorrect: { 
-            en: q.explanation || 'Review this topic in the course material.', 
-            ar: q.explanation || 'راجع هذا الموضوع في مادة الدورة.' 
+            en: q.explanation || 'Review this topic.', 
+            ar: q.explanation || 'راجع هذا الموضوع.' 
           }
         }
       };
@@ -505,6 +506,22 @@ const formatQuestions = (aiQuestions, language) => {
   });
 
   return formatted;
+};
+
+const countQuestionTypes = (questions) => {
+  const counts = {};
+  for (const q of questions) {
+    counts[q.type] = (counts[q.type] || 0) + 1;
+  }
+  return counts;
+};
+
+const countBloomLevels = (questions) => {
+  const counts = {};
+  for (const q of questions) {
+    counts[q.bloomLevel] = (counts[q.bloomLevel] || 0) + 1;
+  }
+  return counts;
 };
 
 // ==================== MAIN EXPORT ====================
@@ -524,14 +541,19 @@ export const processUploadedCourse = async (file, options = {}) => {
       throw new Error('The uploaded file does not contain enough text content. / الملف لا يحتوي على محتوى نصي كافٍ.');
     }
 
-    // Step 2: Analyze content with AI
+    if (onProgress) onProgress('parsing', 20);
+    console.log('File parsed successfully, text length:', parsedContent.text.length);
+
+    // Step 2: Analyze course content with AI
     if (onProgress) onProgress('analyzing', 25);
+    
     let analysis;
     try {
-      analysis = await analyzeWithAI(parsedContent.text, onProgress);
+      analysis = await analyzeCourseContent(parsedContent.text);
+      console.log('AI Analysis completed:', analysis);
     } catch (aiError) {
-      console.error('AI analysis failed, using fallback:', aiError);
-      // Fallback to basic extraction
+      console.error('AI analysis failed:', aiError);
+      // Use basic fallback
       analysis = {
         language: detectLanguage(parsedContent.text),
         title: extractBasicTitle(parsedContent.text),
@@ -540,7 +562,8 @@ export const processUploadedCourse = async (file, options = {}) => {
         modules: [],
         keyConcepts: [],
         skills: [],
-        targetAudience: ''
+        targetAudience: '',
+        keyFacts: []
       };
     }
 
@@ -548,24 +571,21 @@ export const processUploadedCourse = async (file, options = {}) => {
 
     // Step 3: Generate questions with AI
     if (onProgress) onProgress('generating', 55);
+    
     let aiQuestions = [];
     try {
-      aiQuestions = await generateQuestionsWithAI(
-        analysis, 
-        parsedContent.text, 
-        {
-          minQuestions: options.minQuestions || 10,
-          maxQuestions: options.maxQuestions || 20
-        },
-        onProgress
-      );
+      aiQuestions = await generateQuestionsWithAI(analysis, parsedContent.text, {
+        minQuestions: options.minQuestions || 10,
+        maxQuestions: options.maxQuestions || 20
+      });
+      console.log('AI Questions generated:', aiQuestions.length);
     } catch (qError) {
       console.error('AI question generation failed:', qError);
       throw new Error('Failed to generate questions. Please try again. / فشل إنشاء الأسئلة. يرجى المحاولة مرة أخرى.');
     }
 
-    if (aiQuestions.length === 0) {
-      throw new Error('No questions could be generated from this content. / لم يتم إنشاء أي أسئلة من هذا المحتوى.');
+    if (!aiQuestions || aiQuestions.length === 0) {
+      throw new Error('No questions could be generated from this content. / لم يتم إنشاء أي أسئلة.');
     }
 
     if (onProgress) onProgress('generating', 80);
@@ -592,6 +612,7 @@ export const processUploadedCourse = async (file, options = {}) => {
         en: analysis.description || 'AI-analyzed training course.',
         ar: analysis.description || 'دورة تدريبية محللة بالذكاء الاصطناعي.'
       },
+      duration: analysis.duration || '',
       modules: (analysis.modules || []).map((m, idx) => ({
         id: `module-${idx + 1}`,
         title: { en: m.title, ar: m.title },
@@ -603,6 +624,7 @@ export const processUploadedCourse = async (file, options = {}) => {
       })),
       keyConcepts: analysis.keyConcepts || [],
       skills: analysis.skills || [],
+      keyFacts: analysis.keyFacts || [],
       targetAudience: analysis.targetAudience || '',
       sourceFile: {
         name: file.name,
@@ -645,6 +667,7 @@ export const processUploadedCourse = async (file, options = {}) => {
       analysis: {
         title: analysis.title,
         description: analysis.description,
+        duration: analysis.duration,
         objectivesCount: (analysis.objectives || []).length,
         modulesCount: (analysis.modules || []).length,
         conceptsCount: (analysis.keyConcepts || []).length,
@@ -663,23 +686,6 @@ export const processUploadedCourse = async (file, options = {}) => {
       error: error.message || 'Failed to process the course file. / فشل في معالجة ملف الدورة.'
     };
   }
-};
-
-// Helper functions
-const countQuestionTypes = (questions) => {
-  const counts = {};
-  for (const q of questions) {
-    counts[q.type] = (counts[q.type] || 0) + 1;
-  }
-  return counts;
-};
-
-const countBloomLevels = (questions) => {
-  const counts = {};
-  for (const q of questions) {
-    counts[q.bloomLevel] = (counts[q.bloomLevel] || 0) + 1;
-  }
-  return counts;
 };
 
 export default {
