@@ -94,24 +94,25 @@ const AdminCustomAssessments = () => {
     if (!uploadedFile) return;
 
     setProcessingStage('uploading');
-    setProcessingProgress(10);
+    setProcessingProgress(5);
     setProcessingError(null);
 
     try {
-      // Simulate upload progress
+      // Progress callback for real-time updates
+      const onProgress = (stage, progress) => {
+        setProcessingStage(stage);
+        setProcessingProgress(progress);
+      };
+
       setProcessingStage('parsing');
-      setProcessingProgress(30);
+      setProcessingProgress(10);
       
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setProcessingStage('analyzing');
-      setProcessingProgress(50);
-      
-      // Process the file with AI
+      // Process the file with AI (real AI-powered analysis)
       const result = await processUploadedCourse(uploadedFile, {
         minQuestions: 10,
         maxQuestions: 20,
-        language
+        language,
+        onProgress
       });
 
       // Check if processing was successful
@@ -119,11 +120,6 @@ const AdminCustomAssessments = () => {
         throw new Error(result.error || (language === 'en' ? 'Failed to process file' : 'فشل في معالجة الملف'));
       }
 
-      setProcessingProgress(80);
-      setProcessingStage('generating');
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
       setProcessingProgress(100);
       setProcessingStage('complete');
       setAnalysisResult(result);
@@ -201,10 +197,10 @@ const AdminCustomAssessments = () => {
     const messages = {
       idle: { en: 'Ready to process', ar: 'جاهز للمعالجة' },
       uploading: { en: 'Uploading file...', ar: 'جاري رفع الملف...' },
-      parsing: { en: 'Parsing document content...', ar: 'جاري تحليل محتوى المستند...' },
-      analyzing: { en: 'AI is analyzing course content...', ar: 'الذكاء الاصطناعي يحلل محتوى الدورة...' },
-      generating: { en: 'Generating assessment questions...', ar: 'جاري إنشاء أسئلة التقييم...' },
-      complete: { en: 'Processing complete!', ar: 'اكتملت المعالجة!' },
+      parsing: { en: 'Reading document content...', ar: 'جاري قراءة محتوى المستند...' },
+      analyzing: { en: '🧠 AI is understanding course objectives & content...', ar: '🧠 الذكاء الاصطناعي يفهم أهداف ومحتوى الدورة...' },
+      generating: { en: '✨ AI is creating intelligent assessment questions...', ar: '✨ الذكاء الاصطناعي ينشئ أسئلة تقييم ذكية...' },
+      complete: { en: '✅ AI-powered assessment ready!', ar: '✅ التقييم المدعوم بالذكاء الاصطناعي جاهز!' },
       error: { en: 'Error occurred', ar: 'حدث خطأ' }
     };
     return messages[processingStage]?.[language] || '';
